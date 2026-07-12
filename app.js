@@ -20,6 +20,7 @@ const defaultIssues=[
 
 const state={users:JSON.parse(localStorage.getItem("atlas-users")||"null")||defaultUsers,issues:JSON.parse(localStorage.getItem("atlas-issues")||"null")||defaultIssues,currentUser:null};
 const API_ENABLED=location.protocol==="http:"||location.protocol==="https:";let apiToken=localStorage.getItem("atlas-api-token"),result;
+async function loadBuildInfo(){try{const response=await fetch("/api/health",{cache:"no-store"}),info=await response.json();if(!response.ok)return;$$('[data-app-version]').forEach(element=>element.textContent=`v${info.version||"0.5.0"} · ${info.commit||"local"}`)}catch{}}
 async function api(path,options={}){if(window.AtlasOffline&&!['/login','/logout','/change-password'].includes(path))return AtlasOffline.request(path,options,apiToken);const response=await fetch(`/api${path}`,{...options,headers:{"Content-Type":"application/json",...(apiToken?{"Authorization":`Bearer ${apiToken}`}:{}) ,...(options.headers||{})}});const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(body.error||"Não foi possível concluir a operação");return body}
 async function updateSyncStatus(){const element=$("#syncStatus");if(!element||!window.AtlasOffline)return;const pending=await AtlasOffline.count();element.className=`sync-status ${navigator.onLine?(pending?"pending":"online"):"offline"}`;element.querySelector("strong").textContent=navigator.onLine?(pending?`${pending} aguardando envio`:"Sincronizado"):`Offline · ${pending} pendente${pending===1?"":"s"}`}
 let syncing=false;async function syncNow(){if(syncing||!API_ENABLED||!apiToken||!window.AtlasOffline)return;syncing=true;try{const result=await AtlasOffline.flush(apiToken);await updateSyncStatus();if(result.sent){await hydrateFromApi();renderAll();toast(`${result.sent} registro${result.sent===1?"":"s"} sincronizado${result.sent===1?"":"s"}.`)}else if(result.pending&&result.error){toast(`Sincronização pendente: ${result.error}`)}}finally{syncing=false}}
@@ -108,6 +109,7 @@ $("#prepareOfflineBtn").addEventListener("click",prepareOffline);
 $("#prepareOfflineMobileBtn").addEventListener("click",prepareOffline);
 function renderAll(){renderDashboard();renderIssues();renderApprovals();renderUsers()}
 if(window.AtlasOffline){AtlasOffline.register();addEventListener("online",syncNow);addEventListener("offline",updateSyncStatus);addEventListener("atlas-sync-change",updateSyncStatus);addEventListener("atlas-sync-complete",updateSyncStatus)}
+loadBuildInfo();
 if(window.AtlasOffline){$("#syncStatus").addEventListener("click",syncNow);document.addEventListener("visibilitychange",()=>{if(!document.hidden&&navigator.onLine)syncNow()});setInterval(()=>{if(navigator.onLine)syncNow()},30000)}
 
 let installPrompt;

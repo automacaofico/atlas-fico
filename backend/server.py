@@ -24,6 +24,7 @@ SCHEMA = BACKEND / "schema.sql"
 POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 12
 MAX_BODY = 12 * 1024 * 1024
+ATLAS_VERSION = "0.5.0"
 INITIALIZATION = {"ready": False, "error": None}
 
 
@@ -349,7 +350,8 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                 if not INITIALIZATION["ready"]:
                     return self.json_response(503, {"status": "initializing"})
                 database = "postgresql" if os.environ.get("DATABASE_URL") else "sqlite"
-                return self.json_response(200, {"status": "ok", "database": database, "time": iso(utcnow())})
+                commit = os.environ.get("RENDER_GIT_COMMIT", "local")[:7]
+                return self.json_response(200, {"status": "ok", "database": database, "version": ATLAS_VERSION, "commit": commit, "time": iso(utcnow())})
             with db() as connection:
                 user = self.require_user(connection)
                 if not user:
