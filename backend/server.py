@@ -209,14 +209,20 @@ def user_payload(connection, user_id):
     return payload
 
 
-def issue_payload(connection, row):
+def issue_payload(connection, row, histories=None, evidences=None):
     item = dict(row)
-    item["history"] = [dict(x) for x in connection.execute(
-        "SELECT h.event,h.from_status,h.to_status,h.comment,h.created_at,u.name actor FROM issue_history h LEFT JOIN users u ON u.id=h.actor_id WHERE h.issue_id=? ORDER BY h.id", (row["id"],)
-    )]
-    item["evidence"] = [dict(x) for x in connection.execute(
-        "SELECT id,kind,file_path,original_name,mime_type,latitude,longitude,captured_at,created_at FROM evidence WHERE issue_id=? ORDER BY id", (row["id"],)
-    )]
+    if histories is None:
+        item["history"] = [dict(x) for x in connection.execute(
+            "SELECT h.event,h.from_status,h.to_status,h.comment,h.created_at,u.name actor FROM issue_history h LEFT JOIN users u ON u.id=h.actor_id WHERE h.issue_id=? ORDER BY h.id", (row["id"],)
+        )]
+    else:
+        item["history"] = histories.get(row["id"], [])
+    if evidences is None:
+        item["evidence"] = [dict(x) for x in connection.execute(
+            "SELECT id,kind,file_path,original_name,mime_type,latitude,longitude,captured_at,created_at FROM evidence WHERE issue_id=? ORDER BY id", (row["id"],)
+        )]
+    else:
+        item["evidence"] = evidences.get(row["id"], [])
     return item
 
 
@@ -469,7 +475,31 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         rows = connection.execute(
             "SELECT i.*,c.name company FROM issues i JOIN companies c ON c.id=i.company_id WHERE 1=1" + where + " ORDER BY i.id DESC LIMIT 2500", params
         ).fetchall()
-        return self.json_response(200, [issue_payload(connection, x) for x in rows])
+        if not rows:
+            return self.json_response(200, [])
+        issue_ids = [row["id"] for row in rows]
+        placeholders = ",".join("?" for _ in issue_ids)
+        histories = {issue_id: [] for issue_id in issue_ids}
+        history_rows = connection.execute(
+            "SELECT h.issue_id,h.event,h.from_status,h.to_status,h.comment,h.created_at,u.name actor "
+            f"FROM issue_history h LEFT JOIN users u ON u.id=h.actor_id WHERE h.issue_id IN ({placeholders}) ORDER BY h.id",
+            issue_ids,
+        ).fetchall()
+        for history in history_rows:
+            item = dict(history)
+            issue_id = item.pop("issue_id")
+            histories[issue_id].append(item)
+        evidences = {issue_id: [] for issue_id in issue_ids}
+        evidence_rows = connection.execute(
+            "SELECT issue_id,id,kind,file_path,original_name,mime_type,latitude,longitude,captured_at,created_at "
+            f"FROM evidence WHERE issue_id IN ({placeholders}) ORDER BY id",
+            issue_ids,
+        ).fetchall()
+        for evidence in evidence_rows:
+            item = dict(evidence)
+            issue_id = item.pop("issue_id")
+            evidences[issue_id].append(item)
+        return self.json_response(200, [issue_payload(connection, row, histories, evidences) for row in rows])
 
     def get_issue(self, connection, user, issue_id):
         where, params = self.issue_scope(user)
