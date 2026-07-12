@@ -146,6 +146,16 @@ def initialize():
                 "INSERT INTO users(name,email,password_hash,company_id,role,global_approval,must_change_password) VALUES(?,?,?,?,?,?,?)",
                 ("Thyago Pinheiro Viégas Mendonça", email, hash_password(password), company_id, "Administrador", True, True),
             )
+        elif os.environ.get("ATLAS_RESET_ADMIN_PASSWORD", "").lower() == "true":
+            password = os.environ.get("ATLAS_ADMIN_PASSWORD", "")
+            if len(password) < 10:
+                raise RuntimeError("ATLAS_ADMIN_PASSWORD deve ter ao menos 10 caracteres para redefinir a senha")
+            connection.execute(
+                "UPDATE users SET password_hash=?,must_change_password=?,active=?,updated_at=? WHERE email=?",
+                (hash_password(password), True, True, iso(utcnow()), email),
+            )
+            connection.execute("DELETE FROM sessions WHERE user_id=(SELECT id FROM users WHERE email=?)", (email,))
+            print("ATLAS: senha administrativa redefinida; remova ATLAS_RESET_ADMIN_PASSWORD.", flush=True)
         if postgres and connection.execute("SELECT COUNT(*) AS total FROM issues").fetchone()["total"] == 0 and DB_PATH.exists():
             migrate_sqlite_data(connection)
 

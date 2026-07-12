@@ -110,6 +110,7 @@ A carga é repetível: arquivos já associados ao mesmo ID, tipo e nome são ign
 - `SUPABASE_URL`: URL pública do projeto Supabase.
 - `SUPABASE_SERVICE_ROLE_KEY`: chave secreta usada somente pelo servidor.
 - `SUPABASE_BUCKET`: bucket privado de evidências, padrão `evidencias`.
+- `ATLAS_RESET_ADMIN_PASSWORD`: quando definido como `true`, redefine o administrador usando `ATLAS_ADMIN_PASSWORD`, invalida suas sessões e exige troca no login. Deve ser removido logo após um deploy bem-sucedido.
 
 No primeiro início com um PostgreSQL vazio, o ATLAS cria o esquema e migra automaticamente as 1.895 pendências homologadas de `backend/data/atlas.db`. A carga é executada somente quando a tabela de pendências está vazia.
 
