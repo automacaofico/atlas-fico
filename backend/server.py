@@ -6,6 +6,7 @@ import mimetypes
 import os
 import secrets
 import sqlite3
+import threading
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,7 @@ SCHEMA = BACKEND / "schema.sql"
 POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 12
 MAX_BODY = 12 * 1024 * 1024
+INITIALIZATION = {"ready": False, "error": None}
 
 
 def utcnow():
@@ -161,12 +163,16 @@ def migrate_sqlite_data(target):
     try:
         for table in tables:
             rows = source.execute(f"SELECT * FROM {table}").fetchall()
-            for row in rows:
-                columns = list(row.keys())
-                values = [bool(row[name]) if name in boolean_columns.get(table, set()) else row[name] for name in columns]
-                placeholders = ",".join("?" for _ in columns)
-                conflict = " ON CONFLICT DO NOTHING"
-                target.execute(f"INSERT INTO {table} ({','.join(columns)}) VALUES ({placeholders}){conflict}", values)
+            if not rows:
+                continue
+            columns = list(rows[0].keys())
+            values = [
+                tuple(bool(row[name]) if name in boolean_columns.get(table, set()) else row[name] for name in columns)
+                for row in rows
+            ]
+            placeholders = ",".join("%s" for _ in columns)
+            sql = f"INSERT INTO {table} ({','.join(columns)}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
+            target.connection.executemany(sql, values)
         for table in ("companies", "specialties", "users", "issues", "evidence", "issue_history"):
             target.execute(
                 "SELECT setval(pg_get_serial_sequence(?, 'id'), COALESCE((SELECT MAX(id) FROM " + table + "), 1), true)",
@@ -318,11 +324,14 @@ class AtlasHandler(SimpleHTTPRequestHandler):
             return super().do_GET()
         parts = self.route_parts()
         try:
+            if parts == ["api", "health"]:
+                if INITIALIZATION["error"]:
+                    return self.json_response(503, {"status": "error", "detail": INITIALIZATION["error"]})
+                if not INITIALIZATION["ready"]:
+                    return self.json_response(503, {"status": "initializing"})
+                database = "postgresql" if os.environ.get("DATABASE_URL") else "sqlite"
+                return self.json_response(200, {"status": "ok", "database": database, "time": iso(utcnow())})
             with db() as connection:
-                if parts == ["api", "health"]:
-                    database = "postgresql" if os.environ.get("DATABASE_URL") else "sqlite"
-                    connection.execute("SELECT 1").fetchone()
-                    return self.json_response(200, {"status": "ok", "database": database, "time": iso(utcnow())})
                 user = self.require_user(connection)
                 if not user:
                     return
@@ -348,6 +357,8 @@ class AtlasHandler(SimpleHTTPRequestHandler):
             return self.json_response(404, {"error": "Rota não encontrada"})
         parts = self.route_parts()
         try:
+            if not INITIALIZATION["ready"]:
+                return self.json_response(503, {"error": "ATLAS ainda está inicializando"})
             payload = self.read_json()
             with db() as connection:
                 if parts == ["api", "login"]:
@@ -637,10 +648,21 @@ class AtlasHandler(SimpleHTTPRequestHandler):
 
 
 def run(host="127.0.0.1", port=8000):
-    initialize()
     server = ThreadingHTTPServer((host, port), AtlasHandler)
-    print(f"ATLAS disponível em http://{host}:{port}")
-    print("Use Ctrl+C para encerrar")
+
+    def initialize_background():
+        try:
+            print("ATLAS: iniciando banco de dados...", flush=True)
+            initialize()
+            INITIALIZATION["ready"] = True
+            print("ATLAS: banco pronto.", flush=True)
+        except Exception as exc:
+            INITIALIZATION["error"] = str(exc)
+            print(f"ATLAS: falha na inicialização: {exc}", flush=True)
+
+    threading.Thread(target=initialize_background, daemon=True).start()
+    print(f"ATLAS disponível em http://{host}:{port}", flush=True)
+    print("Use Ctrl+C para encerrar", flush=True)
     server.serve_forever()
 
 
