@@ -38,7 +38,28 @@ const canSubmitCorrection=i=>state.currentUser&&state.currentUser.role==="Contra
 function flowStepper(status){const steps=["Pendência aberta","Correção informada","Validação FICO","Baixa concluída"];const current={"Aberta":0,"Em tratamento":0,"Rejeitada":0,"Aguardando validação":2,"Baixada":3}[status]??0;return `<div class="flow-stepper">${steps.map((s,k)=>`<div class="flow-step ${k<current?"done":k===current?"current":""}">${s}</div>`).join("")}</div>`}
 function toast(message){const t=$("#toast");t.textContent=message;t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),2600)}
 
-async function login(email){const password=$("#loginPassword").value;let user;if(API_ENABLED){let result;try{result=await api("/login",{method:"POST",body:JSON.stringify({email,password})});await AtlasOffline.provisionIdentity(email,password,result.user,result.token)}catch(error){if(navigator.onLine)throw error;result=await AtlasOffline.offlineLogin(email,password)}apiToken=result.token;localStorage.setItem("atlas-api-token",apiToken);user={...result.user,globalApproval:result.user.global_approval,mustChangePassword:result.user.must_change_password,company:result.user.company,specialties:result.user.specialties||[]};state.currentUser=user;await hydrateFromApi()}else{user=state.users.find(u=>u.email===email&&u.active);if(!user)throw new Error("Usuário não encontrado ou inativo.");if(user.id===1&&password!=="Atlas@2026")throw new Error("Senha inválida.");state.currentUser=user}$("#loginView").classList.add("hidden");$("#appView").classList.remove("hidden");$("#sidebarName").textContent=user.name;$("#sidebarRole").textContent=user.role;$("#sidebarAvatar").textContent=initials(user.name);$$('.admin-only').forEach(el=>el.classList.toggle("hidden",user.role!=="Administrador"));renderAll();showView("dashboard");await updateSyncStatus();if(navigator.onLine)syncNow();if(API_ENABLED&&user.mustChangePassword&&!result?.offline)$("#passwordDialog").showModal()}
+async function login(email){
+ const password=$("#loginPassword").value;
+ let user,result;
+ if(API_ENABLED){
+  try{result=await api("/login",{method:"POST",body:JSON.stringify({email,password})});await AtlasOffline.provisionIdentity(email,password,result.user,result.token)}
+  catch(error){if(navigator.onLine)throw error;result=await AtlasOffline.offlineLogin(email,password)}
+  apiToken=result.token;localStorage.setItem("atlas-api-token",apiToken);
+  user={...result.user,globalApproval:result.user.global_approval,mustChangePassword:result.user.must_change_password,company:result.user.company,specialties:result.user.specialties||[]};
+  state.currentUser=user;
+ }else{
+  user=state.users.find(u=>u.email===email&&u.active);
+  if(!user)throw new Error("Usuário não encontrado ou inativo.");
+  if(user.id===1&&password!=="Atlas@2026")throw new Error("Senha inválida.");
+  state.currentUser=user;
+ }
+ $("#loginView").classList.add("hidden");$("#appView").classList.remove("hidden");
+ $("#sidebarName").textContent=user.name;$("#sidebarRole").textContent=user.role;$("#sidebarAvatar").textContent=initials(user.name);
+ $$('.admin-only').forEach(el=>el.classList.toggle("hidden",user.role!=="Administrador"));
+ if(API_ENABLED&&user.mustChangePassword&&!result?.offline){$("#passwordDialog").showModal();return}
+ if(API_ENABLED)await hydrateFromApi();
+ renderAll();showView("dashboard");await updateSyncStatus();if(navigator.onLine)syncNow();
+}
 $("#loginForm").addEventListener("submit",async e=>{e.preventDefault();try{await login($("#loginEmail").value)}catch(error){toast(error.message)}});$$('[data-demo]').forEach(b=>b.addEventListener("click",()=>{$("#loginEmail").value=b.dataset.demo}));$("#logoutBtn").addEventListener("click",async()=>{if(API_ENABLED&&apiToken&&navigator.onLine){try{await api("/logout",{method:"POST",body:"{}"})}catch{}}localStorage.removeItem("atlas-api-token");location.reload()});
 
 function showView(view){$$('.view').forEach(v=>v.classList.remove("active-view"));$(`#${view}View`).classList.add("active-view");$$('.nav-item').forEach(n=>n.classList.toggle("active",n.dataset.view===view));const titles={dashboard:["Visão geral","Painel operacional"],issues:["Carteira unificada","Pendências"],approvals:["Fila de trabalho","Aprovações"],users:["Administração","Gestão de usuários"]};$("#pageEyebrow").textContent=titles[view][0];$("#pageTitle").textContent=titles[view][1];if(innerWidth<760)$(".sidebar").classList.remove("open")}

@@ -252,7 +252,10 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def synced_response(self, connection, request_payload, status, response_payload):
         sync_id = request_payload.get("sync_id") if isinstance(request_payload, dict) else None
