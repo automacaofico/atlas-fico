@@ -107,3 +107,16 @@ $("#executiveCompanyFilter").addEventListener("change",renderExecutiveDashboard)
 $("#prepareOfflineBtn").addEventListener("click",prepareOffline);
 function renderAll(){renderDashboard();renderIssues();renderApprovals();renderUsers()}
 if(window.AtlasOffline){AtlasOffline.register();addEventListener("online",syncNow);addEventListener("offline",updateSyncStatus);addEventListener("atlas-sync-change",updateSyncStatus);addEventListener("atlas-sync-complete",updateSyncStatus)}
+
+let installPrompt;
+const installButton=$("#installAppBtn");
+const isIos=/iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone=matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+addEventListener("beforeinstallprompt",event=>{event.preventDefault();installPrompt=event;installButton.classList.remove("hidden")});
+if(isIos&&!isStandalone)installButton.classList.remove("hidden");
+installButton.addEventListener("click",async()=>{
+ if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;installButton.classList.add("hidden");return}
+ if(isIos){toast("No Safari, toque em Compartilhar e depois em Adicionar à Tela de Início.");return}
+ toast("Abra o menu do navegador e selecione Instalar aplicativo.");
+});
+addEventListener("appinstalled",()=>{installButton.classList.add("hidden");toast("ATLAS instalado com sucesso.")});

@@ -1,9 +1,20 @@
 {
-  "name": "ATLAS - Gestão de Pendências",
+  "id": "/",
+  "name": "ATLAS - Gestão de Pendências FICO",
   "short_name": "ATLAS",
-  "start_url": "./index.html",
+  "description": "Inspeções, evidências e aprovação de pendências da FICO.",
+  "lang": "pt-BR",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#f5f7fa",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f7fa",
   "theme_color": "#3578bc",
-  "icons": []
+  "icons": [
+    {"src":"/assets/brand/atlas-app-icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ],
+  "shortcuts": [
+    {"name":"Nova pendência","short_name":"Nova","url":"/?action=new-issue"},
+    {"name":"Aprovações","short_name":"Aprovar","url":"/?view=approvals"}
+  ]
 }
