@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+backend/data/uploads/
+backend/data/*-report.json
+.env
+.venv/

@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: atlas-fico
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python backend/server.py
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit

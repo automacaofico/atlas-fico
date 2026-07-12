@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#3578bc">
+  <meta name="description" content="ATLAS - Gestão de pendências da implantação FICO">
+  <title>ATLAS | Implantação FICO</title>
+  <link rel="icon" type="image/png" href="assets/brand/fico-logo-color.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="offline.css">
+</head>
+<body>
+  <div id="loginView" class="login-shell">
+    <section class="login-brand">
+      <img class="fico-logo login-logo" src="assets/brand/fico-logo-white.png" alt="Implantação FICO - Ferrovia de Integração Centro-Oeste">
+      <div>
+        <p class="eyebrow">Gestão de entrega de obras</p>
+        <h1>ATLAS</h1>
+        <p class="login-copy">Pendências de campo, evidências e aprovações em um único fluxo.</p>
+      </div>
+      <div class="login-proof">
+        <span>Rastreável</span><span>Responsivo</span><span>Auditável</span>
+      </div>
+    </section>
+    <main class="login-panel">
+      <form id="loginForm" class="login-form">
+        <div>
+          <p class="eyebrow">Acesso seguro</p>
+          <h2>Entrar no ATLAS</h2>
+          <p class="muted">Acesso local do ATLAS por e-mail e senha.</p>
+        </div>
+        <label>E-mail<input id="loginEmail" type="email" value="thyago.viegas@vale.com" required></label>
+        <label>Senha<input id="loginPassword" type="password" value="Atlas@2026" required></label>
+        <button class="btn primary wide" type="submit">Entrar</button>
+        <div class="demo-users">
+          <button type="button" data-demo="thyago.viegas@vale.com"><strong>Administrador</strong><small>Acesso completo</small></button>
+          <button type="button" data-demo="fiscal@fico.com.br"><strong>Fiscal drenagem</strong><small>Aprovação por especialidade</small></button>
+          <button type="button" data-demo="contratada@empa.com.br"><strong>Contratada</strong><small>Tratamento e evidências</small></button>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <div id="appView" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><img class="fico-logo sidebar-logo" src="assets/brand/fico-logo-white.png" alt="FICO"><div><strong>ATLAS</strong><small>Gestão de pendências</small></div></div>
+      <nav id="mainNav">
+        <button class="nav-item active" data-view="dashboard"><span>▦</span>Painel</button>
+        <button class="nav-item" data-view="issues"><span>≡</span>Pendências</button>
+        <button class="nav-item" data-view="approvals"><span>✓</span>Aprovações</button>
+        <button class="nav-item admin-only" data-view="users"><span>◎</span>Usuários</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="avatar" id="sidebarAvatar">AS</div>
+        <div><strong id="sidebarName">Ana Souza</strong><small id="sidebarRole">Administrador</small></div>
+        <button id="logoutBtn" title="Sair">↗</button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <button id="menuBtn" class="icon-btn menu-btn">☰</button>
+        <div><p class="eyebrow" id="pageEyebrow">Visão geral</p><h2 id="pageTitle">Painel operacional</h2></div>
+        <div class="top-actions"><div id="syncStatus" class="sync-status online"><span></span><strong>Sincronizado</strong></div><button id="prepareOfflineBtn" class="btn ghost offline-prep">Preparar offline</button><button class="icon-btn" title="Notificações">♢<span class="notification-dot"></span></button><button id="newIssueBtn" class="btn primary">+ Nova pendência</button></div>
+      </header>
+
+      <section id="dashboardView" class="view active-view">
+        <section id="executiveDashboard" class="executive-dashboard hidden">
+          <div class="executive-head">
+            <div><p class="eyebrow">Visão do administrador</p><h3>Desempenho da carteira</h3><p>Indicadores consolidados para acompanhamento gerencial.</p></div>
+            <select id="executiveCompanyFilter"><option value="">Todas as empresas</option></select>
+          </div>
+          <div id="executiveMetrics" class="executive-metrics"></div>
+          <div class="executive-grid">
+            <section class="panel"><div class="panel-head"><div><h3>Carteira por empresa</h3><p>Volume e percentual baixado</p></div></div><div id="companyPerformance"></div></section>
+            <section class="panel"><div class="panel-head"><div><h3>Pendências por especialidade</h3><p>Concentração do backlog</p></div></div><div id="typePerformance"></div></section>
+            <section class="panel"><div class="panel-head"><div><h3>Gargalos do fluxo</h3><p>Pontos que exigem atuação</p></div></div><div id="bottleneckList" class="bottleneck-list"></div></section>
+          </div>
+        </section>
+        <div class="summary-grid" id="summaryGrid"></div>
+        <div class="dashboard-grid">
+          <section class="panel span-2">
+            <div class="panel-head"><div><h3>Pendências que exigem atenção</h3><p>Ordenadas por prazo e criticidade</p></div><button class="text-btn" data-go="issues">Ver todas →</button></div>
+            <div id="attentionList" class="issue-list"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><div><h3>Distribuição por status</h3><p>Carteira atual</p></div></div>
+            <div id="statusChart" class="status-chart"></div>
+          </section>
+          <section class="panel span-3">
+            <div class="panel-head"><div><h3>Atividade recente</h3><p>Últimas movimentações registradas</p></div></div>
+            <div id="activityList" class="activity-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="issuesView" class="view">
+        <div class="toolbar">
+          <label class="search">⌕<input id="issueSearch" placeholder="Buscar por ID, ativo, empresa ou descrição"></label>
+          <select id="statusFilter"><option value="">Todos os status</option></select>
+          <select id="typeFilter"><option value="">Todos os tipos</option></select>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>ID</th><th>Pendência</th><th>Local</th><th>Empresa</th><th>Prazo</th><th>Status</th><th></th></tr></thead><tbody id="issuesTable"></tbody></table></div>
+      </section>
+
+      <section id="approvalsView" class="view">
+        <div class="notice" id="approvalNotice"></div>
+        <div id="approvalCards" class="approval-grid"></div>
+      </section>
+
+      <section id="usersView" class="view">
+        <div class="section-actions"><div><h3>Usuários cadastrados</h3><p>Perfis, empresas e permissões de aprovação.</p></div><button id="newUserBtn" class="btn primary">+ Cadastrar usuário</button></div>
+        <div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Empresa</th><th>Perfil</th><th>Alçada de aprovação</th><th>Status</th><th></th></tr></thead><tbody id="usersTable"></tbody></table></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="drawerOverlay" class="overlay hidden"></div>
+  <aside id="issueDrawer" class="drawer hidden"><div id="issueDrawerContent"></div></aside>
+
+  <dialog id="issueDialog">
+    <form id="issueForm" class="modal-form">
+      <div class="modal-head"><div><p class="eyebrow">Registro de campo</p><h2>Nova pendência</h2></div><button type="button" class="icon-btn close-dialog">×</button></div>
+      <div class="form-grid">
+        <label>Empresa<select name="company" required><option>EMPA</option><option>ATERPA</option><option>APIA</option><option>GSA</option><option>VALE</option></select></label>
+        <label>Classificação<select name="classification" required><option>Tipo A</option><option>Tipo B</option><option>Tipo C</option></select></label>
+        <label>Tipo de pendência<select name="type" required><option>Drenagem</option><option>Erosões</option><option>Documental</option><option>Patologias no Concreto</option><option>Terraplenagem</option></select></label>
+        <label>Ativo<input name="asset" placeholder="Ex.: A47" required></label>
+        <label>KM inicial<input name="kmStart" placeholder="35+074" required></label>
+        <label>KM final<input name="kmEnd" placeholder="35+080" required></label>
+        <label class="full">Descrição<textarea name="description" rows="4" required placeholder="Descreva objetivamente a condição encontrada"></textarea></label>
+        <label>Prazo<input name="deadline" type="date" required></label>
+        <label>Responsável Vale<input name="ficoOwner" value="Ana Souza" required></label>
+        <label class="full photo-input"><span>Foto inicial obrigatória</span><input name="photo" type="file" accept="image/*" capture="environment" required><small>A câmera e a localização serão solicitadas no celular.</small></label>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn ghost close-dialog">Cancelar</button><button class="btn primary" type="submit">Registrar pendência</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="userDialog">
+    <form id="userForm" class="modal-form">
+      <div class="modal-head"><div><p class="eyebrow">Administração</p><h2>Cadastrar usuário</h2></div><button type="button" class="icon-btn close-user-dialog">×</button></div>
+      <div class="form-grid">
+        <label>Nome completo<input name="name" required></label><label>E-mail<input name="email" type="email" required></label>
+        <label>Empresa<select name="company"><option>FICO</option><option>EMPA</option><option>ATERPA</option><option>APIA</option><option>GSA</option></select></label>
+        <label>Perfil<select name="role"><option>Fiscal FICO</option><option>Gestor FICO</option><option>Contratada</option><option>Consulta</option><option>Administrador</option></select></label>
+        <label class="full">Senha temporária<input name="temporaryPassword" type="password" minlength="10" required placeholder="Mínimo de 10 caracteres"><small>O usuário deverá trocar esta senha no primeiro acesso.</small></label>
+        <label class="full checkbox"><input name="globalApproval" type="checkbox"><span><strong>Aprovação geral</strong><small>Pode aprovar ou rejeitar qualquer tipo de pendência.</small></span></label>
+        <fieldset class="full"><legend>Especialidades autorizadas</legend><div class="check-grid" id="specialtyChecks"></div></fieldset>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn ghost close-user-dialog">Cancelar</button><button class="btn primary" type="submit">Cadastrar e enviar convite</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="correctionDialog">
+    <form id="correctionForm" class="modal-form">
+      <input type="hidden" name="issueId">
+      <div class="modal-head"><div><p class="eyebrow">Tratamento da pendência</p><h2>Informar correção executada</h2></div><button type="button" class="icon-btn close-correction-dialog">×</button></div>
+      <div class="correction-summary" id="correctionSummary"></div>
+      <div class="form-grid">
+        <label class="full">Descrição do serviço executado<textarea name="comment" rows="4" required placeholder="Informe o que foi corrigido e as condições atuais"></textarea></label>
+        <label class="full photo-input"><span>Foto da correção obrigatória</span><input name="photo" type="file" accept="image/*" capture="environment" required><small>Registre a condição final no mesmo enquadramento da foto original.</small></label>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn ghost close-correction-dialog">Cancelar</button><button class="btn primary" type="submit">Enviar para validação da FICO</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="decisionDialog">
+    <form id="decisionForm" class="modal-form">
+      <input type="hidden" name="issueId">
+      <div class="modal-head"><div><p class="eyebrow">Validação FICO</p><h2>Rejeitar correção</h2></div><button type="button" class="icon-btn close-decision-dialog">×</button></div>
+      <p class="muted">Explique objetivamente o que ainda precisa ser corrigido. A justificativa ficará registrada no histórico.</p>
+      <label>Justificativa<textarea name="comment" rows="4" required></textarea></label>
+      <div class="modal-actions"><button type="button" class="btn ghost close-decision-dialog">Cancelar</button><button class="btn danger" type="submit">Rejeitar e devolver</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="passwordDialog">
+    <form id="passwordForm" class="modal-form">
+      <div class="modal-head"><div><p class="eyebrow">Segurança da conta</p><h2>Defina uma nova senha</h2></div></div>
+      <p class="muted">A senha temporária deve ser substituída antes de continuar usando o ATLAS.</p>
+      <label>Senha temporária<input name="currentPassword" type="password" required></label>
+      <label>Nova senha<input name="newPassword" type="password" minlength="10" required><small>Mínimo de 10 caracteres, com maiúscula, minúscula e número.</small></label>
+      <label>Confirmar nova senha<input name="confirmPassword" type="password" minlength="10" required></label>
+      <div class="modal-actions"><button class="btn primary" type="submit">Alterar senha</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="editIssueDialog">
+    <form id="editIssueForm" class="modal-form">
+      <input type="hidden" name="issueId">
+      <div class="modal-head"><div><p class="eyebrow">Administração da carteira</p><h2>Editar pendência</h2></div><button type="button" class="icon-btn close-edit-dialog">×</button></div>
+      <div class="form-grid">
+        <label>Empresa<select name="company"><option>EMPA</option><option>ATERPA</option><option>APIA</option><option>GSA</option><option>VALE</option></select></label>
+        <label>Classificação<select name="classification"><option>Tipo A</option><option>Tipo B</option><option>Tipo C</option></select></label>
+        <label>Especialidade<select name="specialty"><option>Drenagem</option><option>Terraplenagem</option><option>Estruturas</option><option>Documental</option><option>Pavimentação</option><option>Obras Complementares</option></select></label>
+        <label>Ativo<input name="asset" required></label>
+        <label>Responsável FICO<input name="ficoOwner"></label>
+        <label>Responsável contratada<input name="contractorOwner"></label>
+        <label>Prazo<input name="deadlineAt" type="date"></label>
+        <label>KM inicial<input name="kmStart"></label>
+        <label>KM final<input name="kmEnd"></label>
+        <label class="full">Descrição<textarea name="description" rows="4" required></textarea></label>
+        <fieldset class="full"><legend>Adicionar foto histórica</legend><div class="form-grid"><label>Tipo<select name="evidenceKind"><option value="ABERTURA">Foto de abertura</option><option value="CORRECAO">Foto de correção</option><option value="DOCUMENTO">Documento fotográfico</option></select></label><label>Arquivo<input name="historicalPhoto" type="file" accept="image/*"></label></div></fieldset>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn ghost close-edit-dialog">Cancelar</button><button class="btn primary" type="submit">Salvar alterações</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="offline.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

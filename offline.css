@@ -1,0 +1,8 @@
+.sync-status{display:flex;align-items:center;gap:7px;padding:8px 10px;border-radius:9px;background:#e8f1f8;color:#2867a5;font-size:10px;white-space:nowrap}
+.sync-status span{width:8px;height:8px;border-radius:50%;background:#3578bc}
+.sync-status.offline{background:#fff0df;color:#9a5d0e}
+.sync-status.offline span{background:#f89b32}
+.sync-status.pending{background:#eef1f5;color:#586979}
+.sync-status.pending span{background:#75879a;animation:syncPulse 1.2s ease-in-out infinite}
+@keyframes syncPulse{50%{opacity:.35;transform:scale(.78)}}
+@media(max-width:760px){.sync-status{position:fixed;left:15px;bottom:15px;z-index:30;box-shadow:0 8px 24px rgba(24,50,77,.16)}.top-actions .offline-prep{display:none}}
