@@ -29,7 +29,7 @@ POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 24 * 7
 MAX_BODY = 12 * 1024 * 1024
 MIN_PASSWORD_LENGTH = 6
-ATLAS_VERSION = "0.12.0"
+ATLAS_VERSION = "0.12.1"
 INITIALIZATION = {"ready": False, "error": None}
 STORAGE_BUCKETS_READY = set()
 
@@ -580,6 +580,8 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                     return
                 if len(parts) == 3 and parts[:2] == ["api", "issues"]:
                     return self.update_issue(connection, user, int(parts[2]), payload)
+                if len(parts) == 3 and parts[:2] == ["api", "users"]:
+                    return self.update_user(connection, user, int(parts[2]), payload)
                 if len(parts) == 4 and parts[:2] == ["api", "users"] and parts[3] == "status":
                     target = int(parts[2])
                     if target == user["id"] and not payload.get("active", True):
@@ -919,6 +921,79 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                 connection.execute("INSERT OR IGNORE INTO user_specialties(user_id,specialty_id) VALUES(?,?)", (target, spec[0]))
         audit(connection, user["id"], "USER_CREATED", "USER", target, {"role": payload["role"], "company": payload["company"]}, self.client_address[0])
         return self.json_response(201, {"id": target, "must_change_password": True})
+
+    def update_user(self, connection, user, target, payload):
+        row = connection.execute(
+            "SELECT u.id,u.name,u.email,u.role,u.global_approval,u.active,u.company_id,c.name company "
+            "FROM users u JOIN companies c ON c.id=u.company_id WHERE u.id=?", (target,),
+        ).fetchone()
+        if not row:
+            return self.json_response(404, {"error": "Usuário não encontrado"})
+        roles = ("Administrador", "Gestor FICO", "Fiscal FICO", "Contratada", "Consulta")
+        required = ("name", "email", "company", "role")
+        missing = [field for field in required if not str(payload.get(field, "")).strip()]
+        if missing:
+            return self.json_response(400, {"error": "Campos obrigatórios ausentes", "fields": missing})
+        role = str(payload["role"]).strip()
+        if role not in roles:
+            return self.json_response(400, {"error": "Perfil de usuário inválido"})
+        if target == user["id"] and role != "Administrador":
+            return self.json_response(400, {"error": "O administrador não pode retirar o próprio perfil administrativo"})
+        active = bool(payload.get("active", row["active"]))
+        if target == user["id"] and not active:
+            return self.json_response(400, {"error": "O administrador não pode desativar a própria conta"})
+        if row["role"] == "Administrador" and row["active"] and (role != "Administrador" or not active):
+            remaining = connection.execute(
+                "SELECT COUNT(*) total FROM users WHERE role='Administrador' AND active=? AND id<>?", (True, target),
+            ).fetchone()["total"]
+            if not remaining:
+                return self.json_response(409, {"error": "Mantenha ao menos um administrador ativo no ATLAS"})
+        company = connection.execute("SELECT id FROM companies WHERE name=? AND active=?", (payload["company"], True)).fetchone()
+        if not company:
+            return self.json_response(400, {"error": "Empresa inválida"})
+        email = str(payload["email"]).strip().lower()
+        duplicate = connection.execute("SELECT id FROM users WHERE email=? AND id<>?", (email, target)).fetchone()
+        if duplicate:
+            return self.json_response(409, {"error": "Já existe um usuário com este e-mail"})
+        requested_specialties = list(dict.fromkeys(str(item).strip() for item in payload.get("specialties", []) if str(item).strip()))
+        valid_specialties = {
+            item[0] for item in connection.execute("SELECT name FROM specialties WHERE active=?", (True,)).fetchall()
+        }
+        invalid_specialties = [item for item in requested_specialties if item not in valid_specialties]
+        if invalid_specialties:
+            return self.json_response(400, {"error": "Especialidade inválida", "specialties": invalid_specialties})
+        fico_roles = ("Administrador", "Gestor FICO", "Fiscal FICO")
+        global_approval = bool(payload.get("global_approval")) if role in fico_roles else False
+        requested_specialties = requested_specialties if role in fico_roles and not global_approval else []
+        previous_specialties = [item[0] for item in connection.execute(
+            "SELECT s.name FROM specialties s JOIN user_specialties us ON us.specialty_id=s.id WHERE us.user_id=? ORDER BY s.name", (target,),
+        ).fetchall()]
+        changes = {}
+        new_values = {
+            "name": str(payload["name"]).strip(), "email": email, "company": str(payload["company"]),
+            "role": role, "global_approval": global_approval, "active": active,
+            "specialties": sorted(requested_specialties),
+        }
+        previous_values = {
+            "name": row["name"], "email": row["email"], "company": row["company"], "role": row["role"],
+            "global_approval": bool(row["global_approval"]), "active": bool(row["active"]),
+            "specialties": previous_specialties,
+        }
+        for field, value in new_values.items():
+            if value != previous_values[field]:
+                changes[field] = {"from": previous_values[field], "to": value}
+        if not changes:
+            return self.json_response(200, {"id": target, "updated": False})
+        connection.execute(
+            "UPDATE users SET name=?,email=?,company_id=?,role=?,global_approval=?,active=?,updated_at=? WHERE id=?",
+            (new_values["name"], email, company[0], role, global_approval, active, iso(utcnow()), target),
+        )
+        connection.execute("DELETE FROM user_specialties WHERE user_id=?", (target,))
+        for specialty in requested_specialties:
+            specialty_id = connection.execute("SELECT id FROM specialties WHERE name=?", (specialty,)).fetchone()[0]
+            connection.execute("INSERT OR IGNORE INTO user_specialties(user_id,specialty_id) VALUES(?,?)", (target, specialty_id))
+        audit(connection, user["id"], "USER_UPDATED", "USER", target, changes, self.client_address[0])
+        return self.json_response(200, {"id": target, "updated": True, "changes": changes})
 
     def update_issue(self, connection, user, issue_id, payload):
         row = connection.execute("SELECT * FROM issues WHERE id=?", (issue_id,)).fetchone()

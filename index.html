@@ -42,7 +42,7 @@
         <button class="btn primary wide" type="submit">Entrar</button>
         <button id="forgotPasswordBtn" class="login-help-link" type="button">Esqueci minha senha</button>
       </form>
-      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.12.0</span></p>
+      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.12.1</span></p>
     </main>
   </div>
 
@@ -66,7 +66,7 @@
         <div><strong id="sidebarName">Ana Souza</strong><small id="sidebarRole">Administrador</small></div>
         <button id="logoutBtn" title="Sair">↗</button>
       </div>
-      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.12.0</span></p>
+      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.12.1</span></p>
     </aside>
 
     <main class="content">
@@ -184,16 +184,18 @@
 
   <dialog id="userDialog">
     <form id="userForm" class="modal-form">
-      <div class="modal-head"><div><p class="eyebrow">Administração</p><h2>Cadastrar usuário</h2></div><button type="button" class="icon-btn close-user-dialog">×</button></div>
+      <input type="hidden" name="userId">
+      <div class="modal-head"><div><p class="eyebrow">Administração</p><h2 id="userDialogTitle">Cadastrar usuário</h2></div><button type="button" class="icon-btn close-user-dialog">×</button></div>
       <div class="form-grid">
         <label>Nome completo<input name="name" required></label><label>E-mail<input name="email" type="email" required></label>
-        <label>Empresa<select name="company"><option>FICO</option><option>EMPA</option><option>ATERPA</option><option>APIA</option><option>GSA</option></select></label>
+        <label>Empresa<select name="company"><option>FICO</option><option>EMPA</option><option>ATERPA</option><option>APIA</option><option>GSA</option><option>VALE</option></select></label>
         <label>Perfil<select name="role"><option>Fiscal FICO</option><option>Gestor FICO</option><option>Contratada</option><option>Consulta</option><option>Administrador</option></select></label>
-        <label class="full">Senha temporária<input name="temporaryPassword" type="password" minlength="6" required placeholder="Mínimo de 6 caracteres"><small>Pode usar somente números. O usuário deverá trocar esta senha no primeiro acesso.</small></label>
-        <label class="full checkbox"><input name="globalApproval" type="checkbox"><span><strong>Aprovação geral</strong><small>Pode aprovar ou rejeitar qualquer tipo de pendência.</small></span></label>
-        <fieldset class="full"><legend>Especialidades autorizadas</legend><div class="check-grid" id="specialtyChecks"></div></fieldset>
+        <label class="full" id="temporaryPasswordField">Senha temporária<input name="temporaryPassword" type="password" minlength="6" required placeholder="Mínimo de 6 caracteres"><small>Pode usar somente números. O usuário deverá trocar esta senha no primeiro acesso.</small></label>
+        <label class="full checkbox hidden" id="userActiveField"><input name="active" type="checkbox"><span><strong>Usuário ativo</strong><small>Usuários inativos não conseguem entrar no ATLAS.</small></span></label>
+        <label class="full checkbox" id="userApprovalField"><input name="globalApproval" type="checkbox"><span><strong>Aprovação geral</strong><small>Pode aprovar ou rejeitar qualquer tipo de pendência.</small></span></label>
+        <fieldset class="full" id="userSpecialtiesField"><legend>Especialidades autorizadas</legend><div class="check-grid" id="specialtyChecks"></div></fieldset>
       </div>
-      <div class="modal-actions"><button type="button" class="btn ghost close-user-dialog">Cancelar</button><button class="btn primary" type="submit">Cadastrar e enviar convite</button></div>
+      <div class="modal-actions"><button type="button" class="btn ghost close-user-dialog">Cancelar</button><button class="btn primary" id="saveUserBtn" type="submit">Cadastrar usuário</button></div>
     </form>
   </dialog>
 
