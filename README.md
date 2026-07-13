@@ -117,6 +117,12 @@ A carga é repetível: arquivos já associados ao mesmo ID, tipo e nome são ign
 
 A versão 0.6.0 cria, uma única vez, perfis temporários identificados com `Teste`: um fiscal por especialidade, um usuário por empresa e um usuário por tipo de perfil. Todos exigem troca de senha no primeiro acesso. O marcador de carga permanece na auditoria; portanto, contas excluídas pelo administrador não são recriadas em reinicializações futuras.
 
+## Dashboards e relatórios executivos
+
+A versão 0.7.0 permite filtrar a carteira por texto, status, especialidade, empresa, ativo, classificação, responsável FICO e período de abertura. O mesmo recorte é aplicado ao Excel, ao relatório detalhado em PDF e ao dashboard executivo em PDF.
+
+O botão **Dashboard PDF** gera a visão gerencial do recorte atual. Quando uma empresa está selecionada, o documento é apresentado como dashboard daquela empresa. O botão **PDFs por empresa** gera um arquivo ZIP com um dashboard independente para cada empresa acessível ao usuário, mantendo os demais filtros selecionados.
+
 ## Relatórios e rastreabilidade
 
 - a carteira acessível ao perfil pode ser exportada em Excel ou PDF na tela **Pendências**;

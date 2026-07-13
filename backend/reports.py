@@ -11,6 +11,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.graphics.shapes import Drawing, Rect, String
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
@@ -81,7 +82,7 @@ def excel_value(key, value):
             return value
 
 
-def issues_xlsx(rows):
+def issues_xlsx(rows, applied_filters="Carteira completa acessível ao perfil"):
     workbook = Workbook()
     summary = workbook.active
     summary.title = "Resumo"
@@ -93,6 +94,9 @@ def issues_xlsx(rows):
     summary["A1"].alignment = Alignment(vertical="center")
     summary["A3"] = f"Gerado em {generated_at()}"
     summary["A3"].font = Font(name="Arial", size=9, color="697B8D")
+    summary["A4"] = f"Recorte aplicado: {applied_filters}"
+    summary.merge_cells("A4:F4")
+    summary["A4"].font = Font(name="Arial", size=9, italic=True, color="697B8D")
     counts = Counter(text(row.get("status")) for row in rows)
     cards = [("Carteira total", len(rows)), ("Abertas", counts.get("Aberta", 0)), ("Em tratamento", counts.get("Em tratamento", 0)), ("Aguardando fiscal", counts.get("Aguardando validação", 0)), ("Baixadas", counts.get("Baixada", 0))]
     for column, (label, value) in enumerate(cards, start=1):
@@ -161,11 +165,14 @@ def header_story(title, subtitle, styles):
     return [table, Spacer(1, 6 * mm)]
 
 
-def issues_pdf(rows):
+def issues_pdf(rows, applied_filters="Carteira completa acessível ao perfil"):
     stream = io.BytesIO()
     styles = pdf_styles()
     document = SimpleDocTemplate(stream, pagesize=landscape(A4), rightMargin=12 * mm, leftMargin=12 * mm, topMargin=10 * mm, bottomMargin=12 * mm, title="ATLAS - Relatório de Pendências")
     story = header_story("ATLAS - Relatório de Pendências", f"Carteira exportada em {generated_at()} - {len(rows)} registro(s)", styles)
+    filter_box = Table([[Paragraph(f"<b>Recorte aplicado:</b> {safe(applied_filters)}", styles["small"])]], colWidths=[260 * mm])
+    filter_box.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F5F8FB")), ("BOX", (0, 0), (-1, -1), .4, colors.HexColor("#DBE5EE")), ("LEFTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
+    story.extend([filter_box, Spacer(1, 4 * mm)])
     counts = Counter(text(row.get("status")) for row in rows)
     summary = [["Carteira", "Abertas", "Em tratamento", "Aguardando fiscal", "Baixadas"], [len(rows), counts.get("Aberta", 0), counts.get("Em tratamento", 0), counts.get("Aguardando validação", 0), counts.get("Baixada", 0)]]
     summary_table = Table(summary, colWidths=[36 * mm] * 5)
@@ -189,6 +196,70 @@ def pdf_footer(canvas, document):
     canvas.drawString(document.leftMargin, 7 * mm, "ATLAS - Desenvolvido por Thyago Viégas")
     canvas.drawRightString(document.pagesize[0] - document.rightMargin, 7 * mm, f"Página {document.page}")
     canvas.restoreState()
+
+
+def bar_drawing(items, width=350, row_height=18, limit=8):
+    selected = list(items)[:limit]
+    height = max(1, len(selected)) * row_height
+    drawing = Drawing(width, height)
+    maximum = max((value for _, value in selected), default=1) or 1
+    label_width = 115
+    chart_width = width - label_width - 42
+    for index, (label, value) in enumerate(selected):
+        y = height - (index + 1) * row_height + 4
+        drawing.add(String(0, y + 2, str(label)[:24], fontName="Helvetica", fontSize=7.5, fillColor=colors.HexColor("#18324D")))
+        drawing.add(Rect(label_width, y, chart_width, 8, fillColor=colors.HexColor("#EDF2F6"), strokeColor=None, rx=4, ry=4))
+        drawing.add(Rect(label_width, y, max(2, chart_width * value / maximum), 8, fillColor=colors.HexColor("#3578BC"), strokeColor=None, rx=4, ry=4))
+        drawing.add(String(width - 34, y + 1, str(value), fontName="Helvetica-Bold", fontSize=8, fillColor=colors.HexColor("#18324D")))
+    return drawing
+
+
+def dashboard_pdf(rows, title="Dashboard executivo geral", applied_filters="Sem filtros adicionais"):
+    stream = io.BytesIO()
+    styles = pdf_styles()
+    document = SimpleDocTemplate(stream, pagesize=landscape(A4), rightMargin=12 * mm, leftMargin=12 * mm, topMargin=9 * mm, bottomMargin=12 * mm, title=f"ATLAS - {title}")
+    today = datetime.now().date().isoformat()
+    total = len(rows)
+    closed = sum(1 for row in rows if row.get("status") == "Baixada")
+    backlog = sum(1 for row in rows if row.get("status") not in ("Baixada", "Cancelada"))
+    waiting = sum(1 for row in rows if row.get("status") == "Aguardando validação")
+    overdue = sum(1 for row in rows if row.get("status") not in ("Baixada", "Cancelada") and row.get("deadline_at") and str(row.get("deadline_at"))[:10] < today)
+    closure_rate = round(closed / total * 100, 1) if total else 0
+    story = header_story(title, f"Posição em {generated_at()} - Fonte: banco de dados ATLAS", styles)
+    filter_box = Table([[Paragraph(f"<b>Recorte aplicado:</b> {safe(applied_filters)}", styles["small"])]], colWidths=[260 * mm])
+    filter_box.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F5F8FB")), ("BOX", (0, 0), (-1, -1), .4, colors.HexColor("#DBE5EE")), ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
+    story.extend([filter_box, Spacer(1, 4 * mm)])
+    metrics = [("CARTEIRA TOTAL", total, "pendências no recorte"), ("BACKLOG ATIVO", backlog, "ainda não baixadas"), ("EM ATRASO", overdue, "prazo ultrapassado"), ("AGUARDANDO FISCAL", waiting, "prontas para validar"), ("TAXA DE BAIXA", f"{closure_rate}%", f"{closed} concluída(s)")]
+    metric_cells = []
+    for label, value, note in metrics:
+        metric_cells.append([Paragraph(label, styles["small"]), Paragraph(f"<b><font size='18'>{value}</font></b>", styles["body"]), Paragraph(note, styles["small"])])
+    metric_table = Table([metric_cells], colWidths=[52 * mm] * 5)
+    metric_table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.white), ("BOX", (0, 0), (-1, -1), .5, colors.HexColor("#DBE5EE")), ("INNERGRID", (0, 0), (-1, -1), .4, colors.HexColor("#DBE5EE")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8)]))
+    story.extend([metric_table, Spacer(1, 5 * mm)])
+
+    status_counts = Counter(text(row.get("status")) or "Sem status" for row in rows).most_common()
+    specialty_counts = Counter(text(row.get("specialty")) or "Sem especialidade" for row in rows).most_common()
+    chart_left = [Paragraph("Distribuição por status", styles["h2"]), bar_drawing(status_counts, width=350, limit=7)]
+    chart_right = [Paragraph("Pendências por especialidade", styles["h2"]), bar_drawing(specialty_counts, width=350, limit=7)]
+    charts = Table([[chart_left, chart_right]], colWidths=[130 * mm, 130 * mm])
+    charts.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("BOX", (0, 0), (-1, -1), .4, colors.HexColor("#DBE5EE")), ("INNERGRID", (0, 0), (-1, -1), .4, colors.HexColor("#DBE5EE")), ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
+    story.extend([charts, Spacer(1, 4 * mm)])
+
+    company_data = [["Empresa", "Carteira", "Baixadas", "Backlog", "Em atraso", "Taxa de baixa"]]
+    by_company = {}
+    for row in rows:
+        by_company.setdefault(text(row.get("company")) or "Sem empresa", []).append(row)
+    for company, company_rows in sorted(by_company.items(), key=lambda item: len(item[1]), reverse=True):
+        company_total = len(company_rows)
+        company_closed = sum(1 for row in company_rows if row.get("status") == "Baixada")
+        company_backlog = sum(1 for row in company_rows if row.get("status") not in ("Baixada", "Cancelada"))
+        company_overdue = sum(1 for row in company_rows if row.get("status") not in ("Baixada", "Cancelada") and row.get("deadline_at") and str(row.get("deadline_at"))[:10] < today)
+        company_data.append([company, company_total, company_closed, company_backlog, company_overdue, f"{round(company_closed/company_total*100, 1) if company_total else 0}%"])
+    company_table = Table(company_data, repeatRows=1, colWidths=[55 * mm, 34 * mm, 34 * mm, 34 * mm, 34 * mm, 34 * mm])
+    company_table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#3578BC")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTNAME", (0, 1), (-1, -1), "Helvetica"), ("FONTSIZE", (0, 0), (-1, -1), 8), ("ALIGN", (1, 0), (-1, -1), "CENTER"), ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#DBE5EE")), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+    story.extend([Paragraph("Desempenho por empresa", styles["h2"]), company_table])
+    document.build(story, onFirstPage=pdf_footer, onLaterPages=pdf_footer)
+    return stream.getvalue()
 
 
 def closure_certificate(issue, history, evidence):

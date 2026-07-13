@@ -46,7 +46,7 @@
           <button type="button" data-demo="contratada@empa.com.br"><strong>Contratada</strong><small>Tratamento e evidências</small></button>
         </div>
       </form>
-      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.6.0</span></p>
+      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.7.0</span></p>
     </main>
   </div>
 
@@ -65,7 +65,7 @@
         <div><strong id="sidebarName">Ana Souza</strong><small id="sidebarRole">Administrador</small></div>
         <button id="logoutBtn" title="Sair">↗</button>
       </div>
-      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.6.0</span></p>
+      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.7.0</span></p>
     </aside>
 
     <main class="content">
@@ -106,12 +106,15 @@
       </section>
 
       <section id="issuesView" class="view">
-        <div class="section-actions export-actions"><div><h3>Carteira de pendências</h3><p>Exporte a carteira acessível ao seu perfil.</p></div><div><button id="exportExcelBtn" class="btn ghost" type="button">Exportar Excel</button><button id="exportPdfBtn" class="btn ghost" type="button">Exportar PDF</button></div></div>
+        <div class="section-actions export-actions"><div><h3>Carteira de pendências</h3><p>Os filtros abaixo também serão aplicados aos relatórios.</p></div><div><button id="exportDashboardBtn" class="btn primary" type="button">Dashboard PDF</button><button id="exportCompanyDashboardsBtn" class="btn ghost" type="button">PDFs por empresa</button><button id="exportExcelBtn" class="btn ghost" type="button">Exportar Excel</button><button id="exportPdfBtn" class="btn ghost" type="button">Relatório PDF</button></div></div>
         <div class="toolbar">
           <label class="search">⌕<input id="issueSearch" placeholder="Buscar por ID, ativo, empresa ou descrição"></label>
           <select id="statusFilter"><option value="">Todos os status</option></select>
           <select id="typeFilter"><option value="">Todos os tipos</option></select>
+          <select id="companyFilter"><option value="">Todas as empresas</option></select>
+          <select id="assetFilter"><option value="">Todos os ativos</option></select>
         </div>
+        <div class="advanced-filters"><select id="classificationFilter"><option value="">Todas as classificações</option></select><select id="ownerFilter"><option value="">Todos os responsáveis FICO</option></select><label>Abertura de<input id="openedFromFilter" type="date"></label><label>até<input id="openedToFilter" type="date"></label><button id="clearFiltersBtn" class="btn ghost" type="button">Limpar filtros</button></div>
         <div class="table-wrap"><table><thead><tr><th>ID</th><th>Pendência</th><th>Local</th><th>Empresa</th><th>Prazo</th><th>Status</th><th></th></tr></thead><tbody id="issuesTable"></tbody></table></div>
       </section>
 

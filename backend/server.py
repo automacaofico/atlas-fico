@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import io
 import json
 import mimetypes
 import os
@@ -9,13 +10,14 @@ import sqlite3
 import threading
 import urllib.error
 import urllib.request
+import zipfile
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
-from reports import closure_certificate, issues_pdf, issues_xlsx
+from reports import closure_certificate, dashboard_pdf, issues_pdf, issues_xlsx
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = Path(__file__).resolve().parent
@@ -26,7 +28,7 @@ SCHEMA = BACKEND / "schema.sql"
 POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 12
 MAX_BODY = 12 * 1024 * 1024
-ATLAS_VERSION = "0.6.0"
+ATLAS_VERSION = "0.7.0"
 INITIALIZATION = {"ready": False, "error": None}
 
 
@@ -426,6 +428,10 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                     return self.export_issues(connection, user, "xlsx")
                 if parts == ["api", "exports", "issues.pdf"]:
                     return self.export_issues(connection, user, "pdf")
+                if parts == ["api", "exports", "dashboard.pdf"]:
+                    return self.export_dashboard(connection, user)
+                if parts == ["api", "exports", "company-dashboards.zip"]:
+                    return self.export_company_dashboards(connection, user)
                 if len(parts) == 4 and parts[:2] == ["api", "issues"] and parts[3] == "certificate.pdf":
                     return self.export_certificate(connection, user, int(parts[2]))
                 if len(parts) == 3 and parts[:2] == ["api", "issues"]:
@@ -787,20 +793,75 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                 overdue += 1
         return self.json_response(200, {"total": total, "by_status": counts, "by_company": companies, "by_specialty": specialties, "overdue": overdue, "closure_rate": round(counts.get("Baixada", 0) / total * 100, 1) if total else 0})
 
-    def export_rows(self, connection, user):
+    def export_filter(self, user, ignore_company=False):
         scope, params = self.issue_scope(user)
-        return connection.execute(
+        query = parse_qs(urlparse(self.path).query)
+        labels = []
+        filters = (
+            ("status", "i.status", "Status"), ("specialty", "i.specialty", "Especialidade"),
+            ("company", "c.name", "Empresa"), ("asset", "i.asset", "Ativo"),
+            ("classification", "i.classification", "Classificação"), ("fico_owner", "i.fico_owner", "Responsável FICO"),
+        )
+        for key, column, label in filters:
+            value = query.get(key, [""])[0].strip()
+            if value and not (ignore_company and key == "company"):
+                scope += f" AND {column}=?"
+                params.append(value)
+                labels.append(f"{label}: {value}")
+        opened_from = query.get("opened_from", [""])[0].strip()
+        opened_to = query.get("opened_to", [""])[0].strip()
+        if opened_from:
+            scope += " AND SUBSTR(CAST(i.opened_at AS TEXT),1,10)>=?"; params.append(opened_from); labels.append(f"Abertura a partir de: {opened_from}")
+        if opened_to:
+            scope += " AND SUBSTR(CAST(i.opened_at AS TEXT),1,10)<=?"; params.append(opened_to); labels.append(f"Abertura até: {opened_to}")
+        search = query.get("q", [""])[0].strip().lower()
+        if search:
+            scope += " AND (LOWER(i.description) LIKE ? OR LOWER(i.asset) LIKE ? OR LOWER(c.name) LIKE ? OR CAST(i.id AS TEXT) LIKE ?)"
+            term = f"%{search}%"; params.extend([term, term, term, term]); labels.append(f"Busca: {search}")
+        return scope, params, labels
+
+    def export_rows(self, connection, user, ignore_company=False):
+        scope, params, labels = self.export_filter(user, ignore_company)
+        rows = connection.execute(
             "SELECT i.*,c.name company FROM issues i JOIN companies c ON c.id=i.company_id WHERE 1=1" + scope + " ORDER BY i.id",
             params,
         ).fetchall()
+        return rows, labels
 
     def export_issues(self, connection, user, file_type):
-        rows = [dict(row) for row in self.export_rows(connection, user)]
+        export_rows, labels = self.export_rows(connection, user)
+        rows = [dict(row) for row in export_rows]
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
         audit(connection, user["id"], "ISSUES_EXPORTED", "REPORT", details={"type": file_type, "rows": len(rows)}, ip=self.client_address[0])
+        applied_filters = " | ".join(labels) if labels else "Carteira completa acessível ao perfil"
         if file_type == "xlsx":
-            return self.binary_response(issues_xlsx(rows), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", f"atlas-pendencias-{stamp}.xlsx")
-        return self.binary_response(issues_pdf(rows), "application/pdf", f"atlas-pendencias-{stamp}.pdf")
+            return self.binary_response(issues_xlsx(rows, applied_filters), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", f"atlas-pendencias-{stamp}.xlsx")
+        return self.binary_response(issues_pdf(rows, applied_filters), "application/pdf", f"atlas-pendencias-{stamp}.pdf")
+
+    def export_dashboard(self, connection, user):
+        export_rows, labels = self.export_rows(connection, user)
+        rows = [dict(row) for row in export_rows]
+        company = parse_qs(urlparse(self.path).query).get("company", [""])[0].strip()
+        title = f"Dashboard executivo - {company}" if company else "Dashboard executivo geral"
+        content = dashboard_pdf(rows, title, " | ".join(labels) if labels else "Carteira completa acessível ao perfil")
+        audit(connection, user["id"], "DASHBOARD_EXPORTED", "REPORT", details={"company": company or "GERAL", "rows": len(rows)}, ip=self.client_address[0])
+        suffix = company.lower().replace(" ", "-") if company else "geral"
+        return self.binary_response(content, "application/pdf", f"atlas-dashboard-{suffix}.pdf")
+
+    def export_company_dashboards(self, connection, user):
+        export_rows, labels = self.export_rows(connection, user, ignore_company=True)
+        grouped = {}
+        for row in export_rows:
+            grouped.setdefault(row["company"], []).append(dict(row))
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for company, rows in sorted(grouped.items()):
+                filename = "".join(character.lower() if character.isalnum() else "-" for character in company).strip("-")
+                company_filters = [label for label in labels if not label.startswith("Empresa:")]
+                content = dashboard_pdf(rows, f"Dashboard executivo - {company}", " | ".join(company_filters) if company_filters else f"Empresa: {company}")
+                archive.writestr(f"atlas-dashboard-{filename}.pdf", content)
+        audit(connection, user["id"], "COMPANY_DASHBOARDS_EXPORTED", "REPORT", details={"companies": len(grouped), "rows": sum(len(rows) for rows in grouped.values())}, ip=self.client_address[0])
+        return self.binary_response(stream.getvalue(), "application/zip", "atlas-dashboards-por-empresa.zip")
 
     def export_certificate(self, connection, user, issue_id):
         scope, params = self.issue_scope(user)
