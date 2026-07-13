@@ -28,7 +28,8 @@ SCHEMA = BACKEND / "schema.sql"
 POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 12
 MAX_BODY = 12 * 1024 * 1024
-ATLAS_VERSION = "0.8.1"
+MIN_PASSWORD_LENGTH = 6
+ATLAS_VERSION = "0.8.2"
 INITIALIZATION = {"ready": False, "error": None}
 STORAGE_BUCKETS_READY = set()
 
@@ -154,8 +155,8 @@ def initialize():
             )
         elif os.environ.get("ATLAS_RESET_ADMIN_PASSWORD", "").lower() == "true":
             password = os.environ.get("ATLAS_ADMIN_PASSWORD", "")
-            if len(password) < 10:
-                raise RuntimeError("ATLAS_ADMIN_PASSWORD deve ter ao menos 10 caracteres para redefinir a senha")
+            if len(password) < MIN_PASSWORD_LENGTH:
+                raise RuntimeError(f"ATLAS_ADMIN_PASSWORD deve ter ao menos {MIN_PASSWORD_LENGTH} caracteres para redefinir a senha")
             connection.execute(
                 "UPDATE users SET password_hash=?,must_change_password=?,active=?,updated_at=? WHERE email=?",
                 (hash_password(password), True, True, iso(utcnow()), email),
@@ -563,8 +564,8 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         row = connection.execute("SELECT password_hash FROM users WHERE id=?", (user["id"],)).fetchone()
         if not verify_password(current, row[0]):
             return self.json_response(400, {"error": "Senha atual inválida"})
-        if len(new) < 10 or not any(c.isupper() for c in new) or not any(c.islower() for c in new) or not any(c.isdigit() for c in new):
-            return self.json_response(400, {"error": "A nova senha deve ter 10 caracteres, maiúscula, minúscula e número"})
+        if len(new) < MIN_PASSWORD_LENGTH:
+            return self.json_response(400, {"error": f"A nova senha deve ter ao menos {MIN_PASSWORD_LENGTH} caracteres"})
         connection.execute("UPDATE users SET password_hash=?,must_change_password=?,updated_at=? WHERE id=?", (hash_password(new), False, iso(utcnow()), user["id"]))
         connection.execute("DELETE FROM sessions WHERE user_id=?", (user["id"],))
         audit(connection, user["id"], "PASSWORD_CHANGED", "USER", user["id"], ip=self.client_address[0])
@@ -753,8 +754,8 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         if missing:
             return self.json_response(400, {"error": "Campos obrigatórios ausentes", "fields": missing})
         password = str(payload["temporary_password"])
-        if len(password) < 10:
-            return self.json_response(400, {"error": "Senha temporária deve ter ao menos 10 caracteres"})
+        if len(password) < MIN_PASSWORD_LENGTH:
+            return self.json_response(400, {"error": f"Senha temporária deve ter ao menos {MIN_PASSWORD_LENGTH} caracteres"})
         company = connection.execute("SELECT id FROM companies WHERE name=?", (payload["company"],)).fetchone()
         if not company:
             return self.json_response(400, {"error": "Empresa inválida"})

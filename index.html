@@ -46,7 +46,7 @@
           <button type="button" data-demo="contratada@empa.com.br"><strong>Contratada</strong><small>Tratamento e evidências</small></button>
         </div>
       </form>
-      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.8.1</span></p>
+      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.8.2</span></p>
     </main>
   </div>
 
@@ -65,7 +65,7 @@
         <div><strong id="sidebarName">Ana Souza</strong><small id="sidebarRole">Administrador</small></div>
         <button id="logoutBtn" title="Sair">↗</button>
       </div>
-      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.8.1</span></p>
+      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.8.2</span></p>
     </aside>
 
     <main class="content">
@@ -159,7 +159,7 @@
         <label>Nome completo<input name="name" required></label><label>E-mail<input name="email" type="email" required></label>
         <label>Empresa<select name="company"><option>FICO</option><option>EMPA</option><option>ATERPA</option><option>APIA</option><option>GSA</option></select></label>
         <label>Perfil<select name="role"><option>Fiscal FICO</option><option>Gestor FICO</option><option>Contratada</option><option>Consulta</option><option>Administrador</option></select></label>
-        <label class="full">Senha temporária<input name="temporaryPassword" type="password" minlength="10" required placeholder="Mínimo de 10 caracteres"><small>O usuário deverá trocar esta senha no primeiro acesso.</small></label>
+        <label class="full">Senha temporária<input name="temporaryPassword" type="password" minlength="6" required placeholder="Mínimo de 6 caracteres"><small>Pode usar somente números. O usuário deverá trocar esta senha no primeiro acesso.</small></label>
         <label class="full checkbox"><input name="globalApproval" type="checkbox"><span><strong>Aprovação geral</strong><small>Pode aprovar ou rejeitar qualquer tipo de pendência.</small></span></label>
         <fieldset class="full"><legend>Especialidades autorizadas</legend><div class="check-grid" id="specialtyChecks"></div></fieldset>
       </div>
@@ -207,8 +207,8 @@
       <div class="modal-head"><div><p class="eyebrow">Segurança da conta</p><h2>Defina uma nova senha</h2></div></div>
       <p class="muted">A senha temporária deve ser substituída antes de continuar usando o ATLAS.</p>
       <label>Senha temporária<input name="currentPassword" type="password" required></label>
-      <label>Nova senha<input name="newPassword" type="password" minlength="10" required><small>Mínimo de 10 caracteres, com maiúscula, minúscula e número.</small></label>
-      <label>Confirmar nova senha<input name="confirmPassword" type="password" minlength="10" required></label>
+      <label>Nova senha<input name="newPassword" type="password" minlength="6" required><small>Mínimo de 6 caracteres, sem exigência de maiúsculas, símbolos ou números.</small></label>
+      <label>Confirmar nova senha<input name="confirmPassword" type="password" minlength="6" required></label>
       <div class="modal-actions"><button class="btn primary" type="submit">Alterar senha</button></div>
     </form>
   </dialog>
