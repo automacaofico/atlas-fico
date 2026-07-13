@@ -26,10 +26,10 @@ UPLOADS = DATA / "uploads"
 DB_PATH = DATA / "atlas.db"
 SCHEMA = BACKEND / "schema.sql"
 POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
-SESSION_HOURS = 12
+SESSION_HOURS = 24 * 7
 MAX_BODY = 12 * 1024 * 1024
 MIN_PASSWORD_LENGTH = 6
-ATLAS_VERSION = "0.9.0"
+ATLAS_VERSION = "0.10.0"
 INITIALIZATION = {"ready": False, "error": None}
 STORAGE_BUCKETS_READY = set()
 
@@ -763,15 +763,23 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         row = connection.execute("SELECT * FROM issues WHERE id=?", (issue_id,)).fetchone()
         if not row:
             return self.json_response(404, {"error": "Pendência não encontrada"})
-        if user["role"] != "Contratada" or user["company_id"] != row["company_id"]:
-            return self.json_response(403, {"error": "Somente a contratada responsável pode enviar a correção"})
+        contractor_authorized = user["role"] == "Contratada" and user["company_id"] == row["company_id"]
+        fico_authorized = user["role"] in ("Administrador", "Gestor FICO", "Fiscal FICO") and (
+            user["global_approval"] or row["specialty"] in user["specialties"]
+        )
+        if not contractor_authorized and not fico_authorized:
+            return self.json_response(403, {"error": "Perfil sem permissão para registrar a correção desta pendência"})
         if row["status"] not in ("Aberta", "Em tratamento", "Rejeitada"):
             return self.json_response(409, {"error": "Status atual não permite nova correção"})
         file_path, mime, original = self.save_data_url(issue_id, payload.get("photo_data_url"), payload.get("photo_name"), user["id"], "CORRECAO")
         connection.execute("INSERT INTO evidence(issue_id,kind,file_path,original_name,mime_type,latitude,longitude,captured_at,uploaded_by) VALUES(?,?,?,?,?,?,?,?,?)", (issue_id, "CORRECAO", file_path, original, mime, payload.get("latitude"), payload.get("longitude"), payload.get("captured_at"), user["id"]))
-        connection.execute("UPDATE issues SET status='Aguardando validação',contractor_owner=?,updated_at=? WHERE id=?", (user["name"], iso(utcnow()), issue_id))
-        connection.execute("INSERT INTO issue_history(issue_id,event,from_status,to_status,comment,actor_id) VALUES(?,?,?,?,?,?)", (issue_id, "CORRECAO_ENVIADA", row["status"], "Aguardando validação", payload.get("comment"), user["id"]))
-        audit(connection, user["id"], "CORRECTION_SUBMITTED", "ISSUE", issue_id, ip=self.client_address[0])
+        if contractor_authorized:
+            connection.execute("UPDATE issues SET status='Aguardando validação',contractor_owner=?,updated_at=? WHERE id=?", (user["name"], iso(utcnow()), issue_id))
+        else:
+            connection.execute("UPDATE issues SET status='Aguardando validação',updated_at=? WHERE id=?", (iso(utcnow()), issue_id))
+        event = "CORRECAO_ENVIADA" if contractor_authorized else "CORRECAO_REGISTRADA_PELO_FISCAL"
+        connection.execute("INSERT INTO issue_history(issue_id,event,from_status,to_status,comment,actor_id) VALUES(?,?,?,?,?,?)", (issue_id, event, row["status"], "Aguardando validação", payload.get("comment"), user["id"]))
+        audit(connection, user["id"], "CORRECTION_SUBMITTED", "ISSUE", issue_id, {"submitted_by": "contractor" if contractor_authorized else "fico"}, self.client_address[0])
         return self.synced_response(connection, payload, 200, {"id": issue_id, "status": "Aguardando validação"})
 
     def decide_issue(self, connection, user, issue_id, payload):

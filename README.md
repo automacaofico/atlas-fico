@@ -38,14 +38,16 @@ Sem conexão, o ATLAS permite:
 
 - consultar a carteira previamente preparada;
 - abrir pendências com foto;
-- informar correções com foto;
+- informar correções com foto pela contratada ou pelo Fiscal FICO habilitado para a especialidade;
 - registrar aprovação ou rejeição, conforme a alçada do fiscal.
+
+O encadeamento completo também funciona sem uma sincronização intermediária: uma pendência aberta offline pode receber correção e decisão ainda com o identificador temporário. Na reconexão, o ATLAS converte esse identificador para o código definitivo e envia abertura, correção e decisão na ordem correta.
 
 As ações ficam na fila local do dispositivo. O indicador no topo mostra `Offline`, `aguardando envio` ou `Sincronizado`. Quando a internet retorna, o ATLAS envia a fila automaticamente. Cada operação recebe um identificador único, e o servidor impede gravações duplicadas mesmo se uma transmissão for repetida.
 
-O acesso offline é provisionado após um login online válido e permanece disponível por até sete dias no dispositivo. Após esse prazo, uma conexão é exigida para renovar a autorização. Senhas não são armazenadas; o dispositivo mantém apenas um verificador PBKDF2.
+O acesso offline é provisionado após um login online válido e permanece disponível por até sete dias no dispositivo. A sessão do servidor usa o mesmo prazo para permitir a sincronização automática ao retornar da obra. Após esse período, uma conexão é exigida para renovar a autorização. Senhas não são armazenadas; o dispositivo mantém apenas um verificador PBKDF2.
 
-Cadastros administrativos de usuários e alterações de segurança continuam exigindo conexão.
+O fluxo operacional de campo funciona integralmente offline depois de usar **Preparar offline**. A primeira instalação, o primeiro login no dispositivo, a renovação após sete dias, cadastros administrativos, recuperação de senha e exportações continuam exigindo conexão.
 
 ## Como iniciar
 

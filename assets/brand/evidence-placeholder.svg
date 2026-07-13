@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">Evidência não disponível</title>
+  <desc id="desc">Espaço reservado para uma fotografia ainda não anexada</desc>
+  <rect width="1200" height="800" fill="#12283d"/>
+  <path d="M470 310h70l25-40h70l25 40h70c28 0 50 22 50 50v210c0 28-22 50-50 50H470c-28 0-50-22-50-50V360c0-28 22-50 50-50Z" fill="none" stroke="#6ea7d8" stroke-width="22"/>
+  <circle cx="600" cy="455" r="82" fill="none" stroke="#f89b32" stroke-width="22"/>
+  <text x="600" y="690" fill="#dceaf5" font-family="Segoe UI,Arial,sans-serif" font-size="34" font-weight="700" text-anchor="middle" letter-spacing="3">SEM EVIDÊNCIA FOTOGRÁFICA</text>
+</svg>
