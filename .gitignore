@@ -4,3 +4,4 @@ backend/data/uploads/
 backend/data/*-report.json
 .env
 .venv/
+output/

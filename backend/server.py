@@ -15,6 +15,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
+from reports import closure_certificate, issues_pdf, issues_xlsx
+
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = Path(__file__).resolve().parent
 DATA = BACKEND / "data"
@@ -24,7 +26,7 @@ SCHEMA = BACKEND / "schema.sql"
 POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 12
 MAX_BODY = 12 * 1024 * 1024
-ATLAS_VERSION = "0.5.0"
+ATLAS_VERSION = "0.6.0"
 INITIALIZATION = {"ready": False, "error": None}
 
 
@@ -159,6 +161,55 @@ def initialize():
             print("ATLAS: senha administrativa redefinida; remova ATLAS_RESET_ADMIN_PASSWORD.", flush=True)
         if postgres and connection.execute("SELECT COUNT(*) AS total FROM issues").fetchone()["total"] == 0 and DB_PATH.exists():
             migrate_sqlite_data(connection)
+        seed_test_users(connection)
+
+
+def seed_test_users(connection):
+    """Perfis temporários de homologação solicitados pelo administrador."""
+    if connection.execute("SELECT 1 FROM audit_log WHERE action='TEST_USERS_SEEDED'").fetchone():
+        return
+    temporary_password = os.environ.get("ATLAS_TEST_PASSWORD", "AtlasTeste@2026")
+
+    def ensure_user(name, email, company, role, global_approval=False, specialties=()):
+        existing = connection.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+        if existing:
+            return existing[0]
+        company_row = connection.execute("SELECT id FROM companies WHERE name=?", (company,)).fetchone()
+        if not company_row:
+            return None
+        returning = " RETURNING id" if getattr(connection, "is_postgres", False) else ""
+        cursor = connection.execute(
+            "INSERT INTO users(name,email,password_hash,company_id,role,global_approval,must_change_password) VALUES(?,?,?,?,?,?,?)" + returning,
+            (name, email, hash_password(temporary_password), company_row[0], role, global_approval, True),
+        )
+        user_id = cursor.fetchone()["id"] if getattr(connection, "is_postgres", False) else cursor.lastrowid
+        for specialty in specialties:
+            specialty_row = connection.execute("SELECT id FROM specialties WHERE name=?", (specialty,)).fetchone()
+            if specialty_row:
+                connection.execute("INSERT OR IGNORE INTO user_specialties(user_id,specialty_id) VALUES(?,?)", (user_id, specialty_row[0]))
+        return user_id
+
+    specialty_slugs = {
+        "Drenagem": "drenagem", "Terraplenagem": "terraplenagem", "Estruturas": "estruturas",
+        "Documental": "documental", "Pavimentação": "pavimentacao", "Obras Complementares": "obras-complementares",
+    }
+    for specialty, slug in specialty_slugs.items():
+        ensure_user(f"Fiscal Teste - {specialty}", f"fiscal.{slug}.teste@atlas-fico.local", "FICO", "Fiscal FICO", specialties=(specialty,))
+
+    for company in ("FICO", "EMPA", "ATERPA", "APIA", "GSA", "VALE"):
+        role = "Contratada" if company not in ("FICO", "VALE") else "Consulta"
+        ensure_user(f"Usuário Teste - {company}", f"usuario.{company.lower()}.teste@atlas-fico.local", company, role)
+
+    role_profiles = (
+        ("Administrador Teste", "administrador.teste@atlas-fico.local", "FICO", "Administrador", True),
+        ("Gestor FICO Teste", "gestor.teste@atlas-fico.local", "FICO", "Gestor FICO", True),
+        ("Fiscal Geral Teste", "fiscal-geral.teste@atlas-fico.local", "FICO", "Fiscal FICO", True),
+        ("Contratada Teste", "contratada.teste@atlas-fico.local", "EMPA", "Contratada", False),
+        ("Consulta Teste", "consulta.teste@atlas-fico.local", "FICO", "Consulta", False),
+    )
+    for name, email, company, role, global_approval in role_profiles:
+        ensure_user(name, email, company, role, global_approval)
+    connection.execute("INSERT INTO audit_log(action,entity_type,details_json) VALUES(?,?,?)", ("TEST_USERS_SEEDED", "USER_BATCH", json.dumps({"temporary_password": "defined"})))
 
 
 def migrate_sqlite_data(target):
@@ -255,6 +306,17 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         try:
             self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def binary_response(self, content, content_type, filename):
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        try:
+            self.wfile.write(content)
         except (BrokenPipeError, ConnectionResetError):
             pass
 
@@ -360,13 +422,24 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                     return self.json_response(200, user)
                 if parts == ["api", "issues"]:
                     return self.get_issues(connection, user)
+                if parts == ["api", "exports", "issues.xlsx"]:
+                    return self.export_issues(connection, user, "xlsx")
+                if parts == ["api", "exports", "issues.pdf"]:
+                    return self.export_issues(connection, user, "pdf")
+                if len(parts) == 4 and parts[:2] == ["api", "issues"] and parts[3] == "certificate.pdf":
+                    return self.export_certificate(connection, user, int(parts[2]))
                 if len(parts) == 3 and parts[:2] == ["api", "issues"]:
                     return self.get_issue(connection, user, int(parts[2]))
                 if parts == ["api", "users"]:
                     if user["role"] != "Administrador":
                         return self.json_response(403, {"error": "Apenas administradores podem consultar usuários"})
                     rows = connection.execute("SELECT u.id,u.name,u.email,u.role,u.global_approval,u.active,c.name company FROM users u JOIN companies c ON c.id=u.company_id ORDER BY u.name").fetchall()
-                    return self.json_response(200, [dict(x) for x in rows])
+                    users = []
+                    for row in rows:
+                        item = dict(row)
+                        item["specialties"] = [specialty[0] for specialty in connection.execute("SELECT s.name FROM specialties s JOIN user_specialties us ON us.specialty_id=s.id WHERE us.user_id=? ORDER BY s.name", (row["id"],))]
+                        users.append(item)
+                    return self.json_response(200, users)
                 if parts == ["api", "dashboard"]:
                     return self.get_dashboard(connection, user)
                 return self.json_response(404, {"error": "Rota não encontrada"})
@@ -435,6 +508,29 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                     audit(connection, user["id"], "USER_STATUS", "USER", target, payload, self.client_address[0])
                     return self.json_response(200, {"ok": True})
                 return self.json_response(404, {"error": "Rota não encontrada"})
+        except Exception as exc:
+            return self.json_response(500, {"error": "Falha interna", "detail": str(exc)})
+
+    def do_DELETE(self):
+        parts = self.route_parts()
+        try:
+            with db() as connection:
+                user = self.require_user(connection, ["Administrador"])
+                if not user:
+                    return
+                if len(parts) != 3 or parts[:2] != ["api", "users"]:
+                    return self.json_response(404, {"error": "Rota não encontrada"})
+                target = int(parts[2])
+                if target == user["id"]:
+                    return self.json_response(400, {"error": "O administrador não pode excluir a própria conta"})
+                references = 0
+                for table, field in (("issues", "created_by"), ("evidence", "uploaded_by"), ("issue_history", "actor_id"), ("audit_log", "actor_id")):
+                    references += connection.execute(f"SELECT COUNT(*) total FROM {table} WHERE {field}=?", (target,)).fetchone()["total"]
+                if references:
+                    return self.json_response(409, {"error": "Este usuário possui registros de auditoria e não pode ser excluído; desative-o para preservar a rastreabilidade"})
+                connection.execute("DELETE FROM users WHERE id=?", (target,))
+                audit(connection, user["id"], "USER_DELETED", "USER", target, ip=self.client_address[0])
+                return self.json_response(200, {"ok": True})
         except Exception as exc:
             return self.json_response(500, {"error": "Falha interna", "detail": str(exc)})
 
@@ -690,6 +786,43 @@ class AtlasHandler(SimpleHTTPRequestHandler):
             if row["status"] != "Baixada" and row["deadline_at"] and str(row["deadline_at"])[:10] < today:
                 overdue += 1
         return self.json_response(200, {"total": total, "by_status": counts, "by_company": companies, "by_specialty": specialties, "overdue": overdue, "closure_rate": round(counts.get("Baixada", 0) / total * 100, 1) if total else 0})
+
+    def export_rows(self, connection, user):
+        scope, params = self.issue_scope(user)
+        return connection.execute(
+            "SELECT i.*,c.name company FROM issues i JOIN companies c ON c.id=i.company_id WHERE 1=1" + scope + " ORDER BY i.id",
+            params,
+        ).fetchall()
+
+    def export_issues(self, connection, user, file_type):
+        rows = [dict(row) for row in self.export_rows(connection, user)]
+        stamp = datetime.now().strftime("%Y%m%d-%H%M")
+        audit(connection, user["id"], "ISSUES_EXPORTED", "REPORT", details={"type": file_type, "rows": len(rows)}, ip=self.client_address[0])
+        if file_type == "xlsx":
+            return self.binary_response(issues_xlsx(rows), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", f"atlas-pendencias-{stamp}.xlsx")
+        return self.binary_response(issues_pdf(rows), "application/pdf", f"atlas-pendencias-{stamp}.pdf")
+
+    def export_certificate(self, connection, user, issue_id):
+        scope, params = self.issue_scope(user)
+        issue = connection.execute(
+            "SELECT i.*,c.name company FROM issues i JOIN companies c ON c.id=i.company_id WHERE i.id=?" + scope,
+            [issue_id] + params,
+        ).fetchone()
+        if not issue:
+            return self.json_response(404, {"error": "Pendência não encontrada"})
+        if issue["status"] != "Baixada":
+            return self.json_response(409, {"error": "O comprovante formal fica disponível após a baixa da pendência"})
+        history = connection.execute(
+            "SELECT h.event,h.from_status,h.to_status,h.comment,h.created_at,u.name actor FROM issue_history h LEFT JOIN users u ON u.id=h.actor_id WHERE h.issue_id=? ORDER BY h.id",
+            (issue_id,),
+        ).fetchall()
+        evidence = connection.execute(
+            "SELECT kind,file_path,original_name,latitude,longitude,captured_at,created_at FROM evidence WHERE issue_id=? ORDER BY id",
+            (issue_id,),
+        ).fetchall()
+        audit(connection, user["id"], "CLOSURE_CERTIFICATE_EXPORTED", "ISSUE", issue_id, ip=self.client_address[0])
+        content = closure_certificate(dict(issue), [dict(row) for row in history], [dict(row) for row in evidence])
+        return self.binary_response(content, "application/pdf", f"atlas-comprovante-encerramento-{issue_id}.pdf")
 
 
 def run(host="127.0.0.1", port=8000):

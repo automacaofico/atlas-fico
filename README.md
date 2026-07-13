@@ -111,6 +111,18 @@ A carga é repetível: arquivos já associados ao mesmo ID, tipo e nome são ign
 - `SUPABASE_SERVICE_ROLE_KEY`: chave secreta usada somente pelo servidor.
 - `SUPABASE_BUCKET`: bucket privado de evidências, padrão `evidencias`.
 - `ATLAS_RESET_ADMIN_PASSWORD`: quando definido como `true`, redefine o administrador usando `ATLAS_ADMIN_PASSWORD`, invalida suas sessões e exige troca no login. Deve ser removido logo após um deploy bem-sucedido.
+- `ATLAS_TEST_PASSWORD`: senha temporária opcional para os perfis de homologação; padrão `AtlasTeste@2026`.
+
+## Perfis de homologação
+
+A versão 0.6.0 cria, uma única vez, perfis temporários identificados com `Teste`: um fiscal por especialidade, um usuário por empresa e um usuário por tipo de perfil. Todos exigem troca de senha no primeiro acesso. O marcador de carga permanece na auditoria; portanto, contas excluídas pelo administrador não são recriadas em reinicializações futuras.
+
+## Relatórios e rastreabilidade
+
+- a carteira acessível ao perfil pode ser exportada em Excel ou PDF na tela **Pendências**;
+- pendências com status **Baixada** disponibilizam um comprovante individual em PDF;
+- o comprovante registra identificação, responsáveis, datas, descrição, histórico de status e edições, evidências vinculadas e um código SHA-256 do conteúdo;
+- cada exportação é registrada na trilha de auditoria do ATLAS.
 
 No primeiro início com um PostgreSQL vazio, o ATLAS cria o esquema e migra automaticamente as 1.895 pendências homologadas de `backend/data/atlas.db`. A carga é executada somente quando a tabela de pendências está vazia.
 
