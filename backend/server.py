@@ -28,7 +28,7 @@ SCHEMA = BACKEND / "schema.sql"
 POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 12
 MAX_BODY = 12 * 1024 * 1024
-ATLAS_VERSION = "0.7.0"
+ATLAS_VERSION = "0.7.1"
 INITIALIZATION = {"ready": False, "error": None}
 
 
