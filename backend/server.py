@@ -28,7 +28,7 @@ SCHEMA = BACKEND / "schema.sql"
 POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 12
 MAX_BODY = 12 * 1024 * 1024
-ATLAS_VERSION = "0.7.2"
+ATLAS_VERSION = "0.7.3"
 INITIALIZATION = {"ready": False, "error": None}
 STORAGE_BUCKETS_READY = set()
 
@@ -684,8 +684,9 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                 STORAGE_BUCKETS_READY.add(cache_key)
                 return
         except urllib.error.HTTPError as exc:
-            if exc.code != 404:
-                detail = exc.read().decode("utf-8", errors="replace")
+            detail = exc.read().decode("utf-8", errors="replace")
+            bucket_missing = exc.code in (400, 404) and "bucket not found" in detail.lower()
+            if not bucket_missing:
                 raise RuntimeError(f"Não foi possível verificar o armazenamento de evidências: {detail}") from exc
         payload = json.dumps({
             "id": bucket,

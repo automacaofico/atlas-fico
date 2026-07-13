@@ -1,4 +1,4 @@
-const CACHE="atlas-shell-v10";
+const CACHE="atlas-shell-v11";
 const SHELL=["/","/index.html","/styles.css","/offline.css","/mobile.css","/offline.js","/app.js","/manifest.webmanifest","/assets/brand/fico-logo-color.png","/assets/brand/fico-logo-white.png","/assets/brand/atlas-app-icon.svg"];
 self.addEventListener("install",event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener("activate",event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
