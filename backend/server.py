@@ -28,7 +28,7 @@ SCHEMA = BACKEND / "schema.sql"
 POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 12
 MAX_BODY = 12 * 1024 * 1024
-ATLAS_VERSION = "0.7.3"
+ATLAS_VERSION = "0.8.0"
 INITIALIZATION = {"ready": False, "error": None}
 STORAGE_BUCKETS_READY = set()
 
@@ -735,6 +735,8 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         decision = payload.get("decision")
         if decision not in ("approve", "reject"):
             return self.json_response(400, {"error": "Decisão inválida"})
+        if decision == "approve" and payload.get("confirmed_review") is not True:
+            return self.json_response(400, {"error": "Confirme a revisão completa dos dados e das evidências antes da baixa"})
         status = "Baixada" if decision == "approve" else "Rejeitada"
         if decision == "reject" and not str(payload.get("comment", "")).strip():
             return self.json_response(400, {"error": "Justificativa obrigatória para rejeição"})

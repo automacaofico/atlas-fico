@@ -1,5 +1,9 @@
 # ATLAS
 
+## Validação segura de pendências
+
+A fila de aprovações abre cada pendência em modo de análise, com dados completos, histórico e comparação fotográfica “Antes” e “Depois”. A baixa somente é enviada após uma segunda confirmação explícita do fiscal; o servidor também exige essa confirmação, evitando aprovações acidentais por clientes desatualizados.
+
 Sistema de gestão de pendências da implantação FICO.
 
 ## Estado atual

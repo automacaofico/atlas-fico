@@ -46,7 +46,7 @@
           <button type="button" data-demo="contratada@empa.com.br"><strong>Contratada</strong><small>Tratamento e evidências</small></button>
         </div>
       </form>
-      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.7.3</span></p>
+      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.8.0</span></p>
     </main>
   </div>
 
@@ -65,7 +65,7 @@
         <div><strong id="sidebarName">Ana Souza</strong><small id="sidebarRole">Administrador</small></div>
         <button id="logoutBtn" title="Sair">↗</button>
       </div>
-      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.7.3</span></p>
+      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.8.0</span></p>
     </aside>
 
     <main class="content">
@@ -187,6 +187,18 @@
       <p class="muted">Explique objetivamente o que ainda precisa ser corrigido. A justificativa ficará registrada no histórico.</p>
       <label>Justificativa<textarea name="comment" rows="4" required></textarea></label>
       <div class="modal-actions"><button type="button" class="btn ghost close-decision-dialog">Cancelar</button><button class="btn danger" type="submit">Rejeitar e devolver</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="approvalDialog" class="approval-dialog">
+    <form id="approvalForm" class="modal-form">
+      <input type="hidden" name="issueId">
+      <div class="modal-head"><div><p class="eyebrow">Validação final FICO</p><h2>Confirmar baixa da pendência</h2></div><button type="button" class="icon-btn close-approval-dialog">×</button></div>
+      <div class="approval-confirmation-summary" id="approvalConfirmationSummary"></div>
+      <label class="checkbox approval-check"><input name="reviewed" type="checkbox" required><span><strong>Revisei a pendência completa e comparei as fotos</strong><small>Confirmo que a evidência “depois” atende ao serviço solicitado e permite o encerramento.</small></span></label>
+      <label>Observação da aprovação<textarea name="comment" rows="3" placeholder="Opcional: registre uma observação para o histórico"></textarea></label>
+      <div class="approval-warning">Esta ação encerra a pendência e gera o comprovante de baixa.</div>
+      <div class="modal-actions"><button type="button" class="btn ghost close-approval-dialog">Voltar e revisar</button><button class="btn primary" type="submit">Confirmar baixa</button></div>
     </form>
   </dialog>
 
