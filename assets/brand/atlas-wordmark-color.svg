@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 126" role="img" aria-labelledby="title desc">
+  <title id="title">ATLAS</title>
+  <desc id="desc">Assinatura ATLAS com A inspirado em trilhos convergentes</desc>
+  <g>
+    <path fill="#f89b32" d="M4 91 42 13h24L29 91z"/>
+    <path fill="#3578bc" d="M54 13h24l38 78H91L66 37 42 91H18z"/>
+    <path fill="#f89b32" d="M34 65h63v9H30z"/>
+    <path fill="#18324d" d="M42 58h5v23h-5zm17 0h5v23h-5zm17 0h5v23h-5z"/>
+  </g>
+  <text x="118" y="91" fill="#18324d" font-family="Segoe UI Variable Display,Arial Black,Arial,sans-serif" font-size="82" font-weight="800" letter-spacing="-3">TLAS</text>
+  <path fill="#f89b32" d="M479 22h13v13h-13z"/>
+  <text x="121" y="119" fill="#3578bc" font-family="Segoe UI Variable,Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="4.3">GESTÃO DE PENDÊNCIAS</text>
+</svg>
