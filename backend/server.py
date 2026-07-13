@@ -29,7 +29,7 @@ POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 12
 MAX_BODY = 12 * 1024 * 1024
 MIN_PASSWORD_LENGTH = 6
-ATLAS_VERSION = "0.8.2"
+ATLAS_VERSION = "0.9.0"
 INITIALIZATION = {"ready": False, "error": None}
 STORAGE_BUCKETS_READY = set()
 
@@ -448,6 +448,15 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                         item["specialties"] = [specialty[0] for specialty in connection.execute("SELECT s.name FROM specialties s JOIN user_specialties us ON us.specialty_id=s.id WHERE us.user_id=? ORDER BY s.name", (row["id"],))]
                         users.append(item)
                     return self.json_response(200, users)
+                if parts == ["api", "password-reset-requests"]:
+                    if user["role"] != "Administrador":
+                        return self.json_response(403, {"error": "Apenas administradores podem consultar solicitações de senha"})
+                    rows = connection.execute(
+                        "SELECT r.id,r.user_id,r.requested_at,u.name,u.email,c.name company "
+                        "FROM password_reset_requests r JOIN users u ON u.id=r.user_id "
+                        "JOIN companies c ON c.id=u.company_id WHERE r.status='PENDENTE' ORDER BY r.requested_at"
+                    ).fetchall()
+                    return self.json_response(200, [dict(row) for row in rows])
                 if parts == ["api", "dashboard"]:
                     return self.get_dashboard(connection, user)
                 return self.json_response(404, {"error": "Rota não encontrada"})
@@ -466,6 +475,8 @@ class AtlasHandler(SimpleHTTPRequestHandler):
             with db() as connection:
                 if parts == ["api", "login"]:
                     return self.login(connection, payload)
+                if parts == ["api", "password-reset-requests"]:
+                    return self.request_password_reset(connection, payload)
                 user = self.require_user(connection)
                 if not user:
                     return
@@ -491,6 +502,8 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                     return self.add_historical_evidence(connection, user, int(parts[2]), payload)
                 if parts == ["api", "users"]:
                     return self.create_user(connection, user, payload)
+                if len(parts) == 4 and parts[:2] == ["api", "users"] and parts[3] == "reset-password":
+                    return self.reset_user_password(connection, user, int(parts[2]), payload)
                 return self.json_response(404, {"error": "Rota não encontrada"})
         except (ValueError, json.JSONDecodeError) as exc:
             return self.json_response(400, {"error": str(exc)})
@@ -557,6 +570,43 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         connection.execute("UPDATE users SET last_login_at=? WHERE id=?", (iso(utcnow()), row["id"]))
         audit(connection, row["id"], "LOGIN", "SESSION", ip=self.client_address[0])
         return self.json_response(200, {"token": token, "expires_at": iso(expires), "user": user_payload(connection, row["id"])})
+
+    def request_password_reset(self, connection, payload):
+        email = str(payload.get("email", "")).strip().lower()
+        if not email:
+            return self.json_response(400, {"error": "Informe o e-mail cadastrado"})
+        row = connection.execute("SELECT id FROM users WHERE email=? AND active=?", (email, True)).fetchone()
+        if row:
+            pending = connection.execute(
+                "SELECT id FROM password_reset_requests WHERE user_id=? AND status='PENDENTE'", (row["id"],)
+            ).fetchone()
+            if not pending:
+                connection.execute("INSERT INTO password_reset_requests(user_id) VALUES(?)", (row["id"],))
+                audit(connection, None, "PASSWORD_RESET_REQUESTED", "USER", row["id"], {"channel": "login"}, self.client_address[0])
+        return self.json_response(202, {"ok": True, "message": "Se o e-mail estiver cadastrado, a solicitação aparecerá para o administrador"})
+
+    def reset_user_password(self, connection, user, target, payload):
+        if user["role"] != "Administrador":
+            return self.json_response(403, {"error": "Apenas administradores podem redefinir senhas"})
+        if target == user["id"]:
+            return self.json_response(400, {"error": "Use Alterar minha senha para modificar a própria conta"})
+        password = str(payload.get("temporary_password", ""))
+        if len(password) < MIN_PASSWORD_LENGTH:
+            return self.json_response(400, {"error": f"A senha temporária deve ter ao menos {MIN_PASSWORD_LENGTH} caracteres"})
+        target_user = connection.execute("SELECT id,email,active FROM users WHERE id=?", (target,)).fetchone()
+        if not target_user or not target_user["active"]:
+            return self.json_response(404, {"error": "Usuário não encontrado ou inativo"})
+        connection.execute(
+            "UPDATE users SET password_hash=?,must_change_password=?,updated_at=? WHERE id=?",
+            (hash_password(password), True, iso(utcnow()), target),
+        )
+        connection.execute("DELETE FROM sessions WHERE user_id=?", (target,))
+        connection.execute(
+            "UPDATE password_reset_requests SET status='RESOLVIDA',resolved_at=?,resolved_by=? WHERE user_id=? AND status='PENDENTE'",
+            (iso(utcnow()), user["id"], target),
+        )
+        audit(connection, user["id"], "PASSWORD_RESET_BY_ADMIN", "USER", target, {"must_change_password": True}, self.client_address[0])
+        return self.json_response(200, {"ok": True, "must_change_password": True})
 
     def change_password(self, connection, user, payload):
         current = str(payload.get("current_password", ""))

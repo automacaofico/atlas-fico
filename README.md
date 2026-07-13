@@ -4,6 +4,10 @@
 
 A fila de aprovações abre cada pendência em modo de análise, com dados completos, histórico e comparação fotográfica “Antes” e “Depois”. A baixa somente é enviada após uma segunda confirmação explícita do fiscal; o servidor também exige essa confirmação, evitando aprovações acidentais por clientes desatualizados.
 
+## Recuperação e alteração de senha
+
+O usuário pode solicitar recuperação na tela de acesso. A solicitação aparece na gestão de usuários para que um administrador defina uma senha temporária, encerre as sessões antigas e force a troca no próximo login. Usuários autenticados também podem alterar a própria senha pelo menu lateral.
+
 Sistema de gestão de pendências da implantação FICO.
 
 ## Estado atual

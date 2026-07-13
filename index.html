@@ -40,13 +40,14 @@
         <label>E-mail<input id="loginEmail" type="email" value="thyago.viegas@vale.com" required></label>
         <label>Senha<input id="loginPassword" type="password" value="Atlas@2026" required></label>
         <button class="btn primary wide" type="submit">Entrar</button>
+        <button id="forgotPasswordBtn" class="login-help-link" type="button">Esqueci minha senha</button>
         <div class="demo-users">
           <button type="button" data-demo="thyago.viegas@vale.com"><strong>Administrador</strong><small>Acesso completo</small></button>
           <button type="button" data-demo="fiscal@fico.com.br"><strong>Fiscal drenagem</strong><small>Aprovação por especialidade</small></button>
           <button type="button" data-demo="contratada@empa.com.br"><strong>Contratada</strong><small>Tratamento e evidências</small></button>
         </div>
       </form>
-      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.8.2</span></p>
+      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.9.0</span></p>
     </main>
   </div>
 
@@ -59,13 +60,14 @@
         <button class="nav-item" data-view="approvals"><span>✓</span>Aprovações</button>
         <button class="nav-item admin-only" data-view="users"><span>◎</span>Usuários</button>
       </nav>
+      <button id="changePasswordBtn" class="sidebar-account" type="button"><span>⌁</span><span><strong>Alterar minha senha</strong><small>Segurança da conta</small></span></button>
       <button id="prepareOfflineMobileBtn" class="sidebar-offline" type="button"><span>↓</span><span><strong>Preparar offline</strong><small>Baixar carteira para o campo</small></span></button>
       <div class="sidebar-foot">
         <div class="avatar" id="sidebarAvatar">AS</div>
         <div><strong id="sidebarName">Ana Souza</strong><small id="sidebarRole">Administrador</small></div>
         <button id="logoutBtn" title="Sair">↗</button>
       </div>
-      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.8.2</span></p>
+      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.9.0</span></p>
     </aside>
 
     <main class="content">
@@ -125,6 +127,7 @@
 
       <section id="usersView" class="view">
         <div class="section-actions"><div><h3>Usuários cadastrados</h3><p>Perfis, empresas e permissões de aprovação.</p></div><button id="newUserBtn" class="btn primary">+ Cadastrar usuário</button></div>
+        <div id="passwordResetPanel" class="password-reset-panel hidden"></div>
         <div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Empresa</th><th>Perfil</th><th>Alçada de aprovação</th><th>Status</th><th></th></tr></thead><tbody id="usersTable"></tbody></table></div>
       </section>
     </main>
@@ -204,12 +207,31 @@
 
   <dialog id="passwordDialog">
     <form id="passwordForm" class="modal-form">
-      <div class="modal-head"><div><p class="eyebrow">Segurança da conta</p><h2>Defina uma nova senha</h2></div></div>
-      <p class="muted">A senha temporária deve ser substituída antes de continuar usando o ATLAS.</p>
-      <label>Senha temporária<input name="currentPassword" type="password" required></label>
+      <div class="modal-head"><div><p class="eyebrow">Segurança da conta</p><h2 id="passwordDialogTitle">Defina uma nova senha</h2></div><button id="closePasswordDialog" type="button" class="icon-btn">×</button></div>
+      <p id="passwordDialogCopy" class="muted">A senha temporária deve ser substituída antes de continuar usando o ATLAS.</p>
+      <label>Senha atual<input name="currentPassword" type="password" required></label>
       <label>Nova senha<input name="newPassword" type="password" minlength="6" required><small>Mínimo de 6 caracteres, sem exigência de maiúsculas, símbolos ou números.</small></label>
       <label>Confirmar nova senha<input name="confirmPassword" type="password" minlength="6" required></label>
       <div class="modal-actions"><button class="btn primary" type="submit">Alterar senha</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="forgotPasswordDialog">
+    <form id="forgotPasswordForm" class="modal-form">
+      <div class="modal-head"><div><p class="eyebrow">Recuperação de acesso</p><h2>Esqueci minha senha</h2></div><button type="button" class="icon-btn close-forgot-password">×</button></div>
+      <p class="muted">Informe o e-mail cadastrado. A solicitação ficará disponível para o administrador do ATLAS.</p>
+      <label>E-mail<input name="email" type="email" required autocomplete="email"></label>
+      <div class="modal-actions"><button type="button" class="btn ghost close-forgot-password">Cancelar</button><button class="btn primary" type="submit">Solicitar recuperação</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="resetPasswordDialog">
+    <form id="resetPasswordForm" class="modal-form">
+      <input type="hidden" name="userId">
+      <div class="modal-head"><div><p class="eyebrow">Administração</p><h2>Redefinir senha</h2></div><button type="button" class="icon-btn close-reset-password">×</button></div>
+      <div id="resetPasswordSummary" class="correction-summary"></div>
+      <label>Nova senha temporária<input name="temporaryPassword" type="password" minlength="6" required placeholder="Ex.: 123456"><small>O usuário deverá alterá-la no próximo acesso.</small></label>
+      <div class="modal-actions"><button type="button" class="btn ghost close-reset-password">Cancelar</button><button class="btn primary" type="submit">Redefinir e desconectar usuário</button></div>
     </form>
   </dialog>
 
