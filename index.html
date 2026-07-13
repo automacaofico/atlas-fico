@@ -31,23 +31,18 @@
       </div>
     </section>
     <main class="login-panel">
-      <form id="loginForm" class="login-form">
+      <form id="loginForm" class="login-form" autocomplete="off">
         <div>
           <p class="eyebrow">Acesso seguro</p>
           <h2>Entrar no ATLAS</h2>
           <p class="muted">Acesso local do ATLAS por e-mail e senha.</p>
         </div>
-        <label>E-mail<input id="loginEmail" type="email" value="thyago.viegas@vale.com" required></label>
-        <label>Senha<input id="loginPassword" type="password" value="Atlas@2026" required></label>
+        <label>E-mail<input id="loginEmail" name="atlas_login_email" type="email" autocomplete="off" autocapitalize="none" spellcheck="false" required></label>
+        <label>Senha<input id="loginPassword" name="atlas_login_password" type="password" autocomplete="new-password" required></label>
         <button class="btn primary wide" type="submit">Entrar</button>
         <button id="forgotPasswordBtn" class="login-help-link" type="button">Esqueci minha senha</button>
-        <div class="demo-users">
-          <button type="button" data-demo="thyago.viegas@vale.com"><strong>Administrador</strong><small>Acesso completo</small></button>
-          <button type="button" data-demo="fiscal@fico.com.br"><strong>Fiscal drenagem</strong><small>Aprovação por especialidade</small></button>
-          <button type="button" data-demo="contratada@empa.com.br"><strong>Contratada</strong><small>Tratamento e evidências</small></button>
-        </div>
       </form>
-      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.10.0</span></p>
+      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.10.1</span></p>
     </main>
   </div>
 
@@ -67,7 +62,7 @@
         <div><strong id="sidebarName">Ana Souza</strong><small id="sidebarRole">Administrador</small></div>
         <button id="logoutBtn" title="Sair">↗</button>
       </div>
-      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.10.0</span></p>
+      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.10.1</span></p>
     </aside>
 
     <main class="content">
