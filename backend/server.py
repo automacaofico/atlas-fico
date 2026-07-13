@@ -29,7 +29,7 @@ POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 24 * 7
 MAX_BODY = 12 * 1024 * 1024
 MIN_PASSWORD_LENGTH = 6
-ATLAS_VERSION = "0.10.2"
+ATLAS_VERSION = "0.11.0"
 INITIALIZATION = {"ready": False, "error": None}
 STORAGE_BUCKETS_READY = set()
 
@@ -289,6 +289,28 @@ def audit(connection, actor_id, action, entity_type, entity_id=None, details=Non
     )
 
 
+PORTFOLIO_BACKUP_COLUMNS = {
+    "issues": ("id", "source_id", "package", "segment", "asset", "side", "company_id", "protocol_code", "origin", "protocol", "protocol_type", "protocol_item", "element", "specialty", "description", "classification", "km_start", "km_end", "status", "contractor_owner", "fico_owner", "opened_at", "deadline_at", "expected_close_at", "closed_at", "notes", "created_by", "updated_at"),
+    "evidence": ("id", "issue_id", "kind", "file_path", "original_name", "mime_type", "latitude", "longitude", "captured_at", "uploaded_by", "created_at"),
+    "issue_history": ("id", "issue_id", "event", "from_status", "to_status", "comment", "actor_id", "created_at"),
+}
+
+
+def timestamp_key(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return str(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
 class AtlasHandler(SimpleHTTPRequestHandler):
     server_version = "ATLAS/0.2"
 
@@ -459,6 +481,10 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                     return self.json_response(200, [dict(row) for row in rows])
                 if parts == ["api", "dashboard"]:
                     return self.get_dashboard(connection, user)
+                if parts == ["api", "admin", "backups"]:
+                    return self.list_backups(connection, user)
+                if len(parts) == 5 and parts[:3] == ["api", "admin", "backups"] and parts[4] == "download":
+                    return self.download_backup(connection, user, int(parts[3]))
                 return self.json_response(404, {"error": "Rota não encontrada"})
         except Exception as exc:
             print(f"ATLAS erro GET {self.path}: {exc}", flush=True)
@@ -504,6 +530,10 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                     return self.create_user(connection, user, payload)
                 if len(parts) == 4 and parts[:2] == ["api", "users"] and parts[3] == "reset-password":
                     return self.reset_user_password(connection, user, int(parts[2]), payload)
+                if parts == ["api", "admin", "backups"]:
+                    return self.create_backup(connection, user, payload)
+                if len(parts) == 5 and parts[:3] == ["api", "admin", "backups"] and parts[4] == "restore":
+                    return self.restore_backup(connection, user, int(parts[3]), payload)
                 return self.json_response(404, {"error": "Rota não encontrada"})
         except (ValueError, json.JSONDecodeError) as exc:
             return self.json_response(400, {"error": str(exc)})
@@ -763,6 +793,8 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         row = connection.execute("SELECT * FROM issues WHERE id=?", (issue_id,)).fetchone()
         if not row:
             return self.json_response(404, {"error": "Pendência não encontrada"})
+        if self.has_issue_conflict(row, payload):
+            return self.issue_conflict_response(row, "A pendência foi alterada depois que este dispositivo ficou offline")
         contractor_authorized = user["role"] == "Contratada" and user["company_id"] == row["company_id"]
         fico_authorized = user["role"] in ("Administrador", "Gestor FICO", "Fiscal FICO") and (
             user["global_approval"] or row["specialty"] in user["specialties"]
@@ -786,6 +818,8 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         row = connection.execute("SELECT * FROM issues WHERE id=?", (issue_id,)).fetchone()
         if not row:
             return self.json_response(404, {"error": "Pendência não encontrada"})
+        if self.has_issue_conflict(row, payload):
+            return self.issue_conflict_response(row, "A pendência mudou antes desta decisão ser sincronizada")
         if row["status"] != "Aguardando validação":
             return self.json_response(409, {"error": "Pendência não está aguardando validação"})
         authorized = user["role"] in ("Administrador", "Gestor FICO", "Fiscal FICO") and (user["global_approval"] or row["specialty"] in user["specialties"])
@@ -875,6 +909,103 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         audit(connection, user["id"], "HISTORICAL_EVIDENCE_ADDED", "ISSUE", issue_id, {"kind": kind, "file": original}, self.client_address[0])
         evidence_id = cursor.fetchone()["id"] if getattr(connection, "is_postgres", False) else cursor.lastrowid
         return self.json_response(201, {"id": evidence_id, "issue_id": issue_id, "kind": kind, "file_path": file_path})
+
+    def has_issue_conflict(self, row, payload):
+        base = payload.get("base_updated_at")
+        return bool(base and not payload.get("force_conflict") and timestamp_key(base) != timestamp_key(row["updated_at"]))
+
+    def issue_conflict_response(self, row, message):
+        return self.json_response(409, {
+            "error": message,
+            "conflict": True,
+            "current": {
+                "id": row["id"], "status": row["status"], "updated_at": row["updated_at"],
+                "specialty": row["specialty"], "description": row["description"],
+            },
+        })
+
+    def require_admin_backup(self, user):
+        if user["role"] != "Administrador":
+            self.json_response(403, {"error": "Apenas administradores podem gerenciar pontos de recuperação"})
+            return False
+        return True
+
+    def build_portfolio_snapshot(self, connection):
+        tables = {}
+        for table, columns in PORTFOLIO_BACKUP_COLUMNS.items():
+            rows = connection.execute(f"SELECT {','.join(columns)} FROM {table} ORDER BY id").fetchall()
+            tables[table] = [dict(row) for row in rows]
+        return {"format": "atlas-portfolio-backup", "version": 1, "created_at": iso(utcnow()), "tables": tables}
+
+    def list_backups(self, connection, user):
+        if not self.require_admin_backup(user):
+            return
+        rows = connection.execute(
+            "SELECT b.id,b.label,b.issue_count,b.created_at,u.name created_by_name "
+            "FROM portfolio_backups b JOIN users u ON u.id=b.created_by ORDER BY b.id DESC LIMIT 10"
+        ).fetchall()
+        return self.json_response(200, [dict(row) for row in rows])
+
+    def create_backup(self, connection, user, payload):
+        if not self.require_admin_backup(user):
+            return
+        snapshot = self.build_portfolio_snapshot(connection)
+        label = str(payload.get("label") or f"Ponto de recuperação {datetime.now().strftime('%d/%m/%Y %H:%M')}").strip()[:120]
+        snapshot_json = json.dumps(snapshot, ensure_ascii=False, default=str)
+        issue_count = len(snapshot["tables"]["issues"])
+        returning = " RETURNING id" if getattr(connection, "is_postgres", False) else ""
+        cursor = connection.execute(
+            "INSERT INTO portfolio_backups(label,snapshot_json,issue_count,created_by) VALUES(?,?,?,?)" + returning,
+            (label, snapshot_json, issue_count, user["id"]),
+        )
+        backup_id = cursor.fetchone()["id"] if getattr(connection, "is_postgres", False) else cursor.lastrowid
+        connection.execute("DELETE FROM portfolio_backups WHERE id NOT IN (SELECT id FROM portfolio_backups ORDER BY id DESC LIMIT 10)")
+        audit(connection, user["id"], "PORTFOLIO_BACKUP_CREATED", "BACKUP", backup_id, {"label": label, "issues": issue_count}, self.client_address[0])
+        return self.json_response(201, {"id": backup_id, "label": label, "issue_count": issue_count})
+
+    def download_backup(self, connection, user, backup_id):
+        if not self.require_admin_backup(user):
+            return
+        row = connection.execute("SELECT id,label,snapshot_json FROM portfolio_backups WHERE id=?", (backup_id,)).fetchone()
+        if not row:
+            return self.json_response(404, {"error": "Ponto de recuperação não encontrado"})
+        snapshot = row["snapshot_json"] if isinstance(row["snapshot_json"], dict) else json.loads(row["snapshot_json"])
+        content = json.dumps(snapshot, ensure_ascii=False, indent=2, default=str).encode("utf-8")
+        audit(connection, user["id"], "PORTFOLIO_BACKUP_DOWNLOADED", "BACKUP", backup_id, ip=self.client_address[0])
+        return self.binary_response(content, "application/json; charset=utf-8", f"atlas-backup-{backup_id}.json")
+
+    def restore_backup(self, connection, user, backup_id, payload):
+        if not self.require_admin_backup(user):
+            return
+        if str(payload.get("confirmation", "")).strip().upper() != "RESTAURAR":
+            return self.json_response(400, {"error": "Digite RESTAURAR para confirmar a recuperação da carteira"})
+        row = connection.execute("SELECT id,label,snapshot_json,issue_count FROM portfolio_backups WHERE id=?", (backup_id,)).fetchone()
+        if not row:
+            return self.json_response(404, {"error": "Ponto de recuperação não encontrado"})
+        snapshot = row["snapshot_json"] if isinstance(row["snapshot_json"], dict) else json.loads(row["snapshot_json"])
+        if snapshot.get("format") != "atlas-portfolio-backup" or snapshot.get("version") != 1:
+            return self.json_response(409, {"error": "Formato de backup incompatível"})
+        tables = snapshot.get("tables", {})
+        for table in ("issues", "evidence", "issue_history"):
+            if table not in tables:
+                return self.json_response(409, {"error": f"Backup incompleto: tabela {table} ausente"})
+        connection.execute("DELETE FROM issue_history")
+        connection.execute("DELETE FROM evidence")
+        connection.execute("DELETE FROM issues")
+        for table in ("issues", "evidence", "issue_history"):
+            columns = PORTFOLIO_BACKUP_COLUMNS[table]
+            placeholders = ",".join("?" for _ in columns)
+            sql = f"INSERT INTO {table} ({','.join(columns)}) VALUES ({placeholders})"
+            for item in tables[table]:
+                connection.execute(sql, tuple(item.get(column) for column in columns))
+        if getattr(connection, "is_postgres", False):
+            for table in ("issues", "evidence", "issue_history"):
+                connection.execute(
+                    "SELECT setval(pg_get_serial_sequence(?, 'id'), COALESCE((SELECT MAX(id) FROM " + table + "), 1), true)",
+                    (table,),
+                )
+        audit(connection, user["id"], "PORTFOLIO_BACKUP_RESTORED", "BACKUP", backup_id, {"label": row["label"], "issues": len(tables["issues"])}, self.client_address[0])
+        return self.json_response(200, {"ok": True, "backup_id": backup_id, "issue_count": len(tables["issues"])})
 
     def get_dashboard(self, connection, user):
         scope, params = self.issue_scope(user)

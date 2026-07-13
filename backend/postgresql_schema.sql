@@ -43,3 +43,4 @@ CREATE TABLE IF NOT EXISTS password_reset_requests (id BIGSERIAL PRIMARY KEY,use
 CREATE INDEX IF NOT EXISTS idx_password_reset_status ON password_reset_requests(status);
 CREATE TABLE IF NOT EXISTS audit_log (id BIGSERIAL PRIMARY KEY,actor_id BIGINT REFERENCES users(id),action TEXT NOT NULL,entity_type TEXT,entity_id TEXT,details_json JSONB,ip_address INET,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
 CREATE TABLE IF NOT EXISTS sync_operations (sync_id TEXT PRIMARY KEY,response_status INTEGER NOT NULL,response_json JSONB NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+CREATE TABLE IF NOT EXISTS portfolio_backups (id BIGSERIAL PRIMARY KEY,label TEXT NOT NULL,snapshot_json JSONB NOT NULL,issue_count INTEGER NOT NULL,created_by BIGINT NOT NULL REFERENCES users(id),created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());

@@ -24,3 +24,4 @@
 @media(max-width:900px){.approval-review-content{grid-template-columns:1fr}.approval-review-images img{height:300px}}
 @media(max-width:760px){.approval-review-images,.drawer-evidence-grid{grid-template-columns:1fr}.approval-review-images img{height:260px}.drawer-evidence-grid img,.drawer-single-evidence img{height:250px}.approval-facts{grid-template-columns:1fr 1fr}.approval-review-footer{display:block}.approval-review-footer .btn{width:100%;margin-top:10px}.review-actions{display:grid;grid-template-columns:1fr}.section-label{display:block}.section-label small{display:block;margin-top:3px}}
 @media(max-width:760px){.password-reset-panel{grid-template-columns:1fr}.sidebar-account{margin-top:14px}}
+#approvalDialog.approval-dialog{width:min(900px,calc(100% - 24px))}#approvalDialog .approval-confirmation-summary{display:block;padding:0;border:0;background:transparent}
