@@ -262,17 +262,17 @@ def dashboard_pdf(rows, title="Dashboard executivo geral", applied_filters="Sem 
     return stream.getvalue()
 
 
-def closure_certificate(issue, history, evidence):
+def closure_certificate(issue, history, evidence, signature=None):
     stream = io.BytesIO()
     styles = pdf_styles()
-    document = SimpleDocTemplate(stream, pagesize=A4, rightMargin=16 * mm, leftMargin=16 * mm, topMargin=12 * mm, bottomMargin=15 * mm, title=f"Comprovante de encerramento ATLAS #{issue['id']}")
-    canonical = json.dumps({"issue": dict(issue), "history": [dict(item) for item in history], "evidence": [dict(item) for item in evidence]}, ensure_ascii=False, default=str, sort_keys=True)
+    document = SimpleDocTemplate(stream, pagesize=A4, rightMargin=16 * mm, leftMargin=16 * mm, topMargin=10 * mm, bottomMargin=13 * mm, title=f"Comprovante de encerramento ATLAS #{issue['id']}")
+    canonical = json.dumps({"issue": dict(issue), "history": [dict(item) for item in history], "evidence": [dict(item) for item in evidence], "signature": dict(signature) if signature else None}, ensure_ascii=False, default=str, sort_keys=True)
     verification = hashlib.sha256(canonical.encode("utf-8")).hexdigest().upper()
     story = header_story(f"Comprovante de encerramento #{issue['id']}", f"Documento de rastreabilidade emitido em {generated_at()}", styles)
     status_color = colors.HexColor("#E5F0F8")
     status = Table([["STATUS", issue.get("status"), "DATA DA BAIXA", date_text(issue.get("closed_at"))]], colWidths=[28 * mm, 45 * mm, 34 * mm, 45 * mm])
-    status.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), status_color), ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"), ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#18324D")), ("BOX", (0, 0), (-1, -1), .6, colors.HexColor("#3578BC")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8)]))
-    story.extend([status, Spacer(1, 5 * mm), Paragraph("Identificação da pendência", styles["h2"])])
+    status.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), status_color), ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"), ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#18324D")), ("BOX", (0, 0), (-1, -1), .6, colors.HexColor("#3578BC")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+    story.extend([status, Spacer(1, 3 * mm), Paragraph("Identificação da pendência", styles["h2"])])
     fields = [
         ("ID original", issue.get("source_id")), ("Empresa", issue.get("company")),
         ("Especialidade", issue.get("specialty")), ("Classificação", issue.get("classification")),
@@ -286,21 +286,33 @@ def closure_certificate(issue, history, evidence):
         left, right = fields[index], fields[index + 1]
         rows.append([Paragraph(f"<b>{safe(left[0])}</b><br/>{safe(left[1]) or '-'}", styles["body"]), Paragraph(f"<b>{safe(right[0])}</b><br/>{safe(right[1]) or '-'}", styles["body"])])
     details = Table(rows, colWidths=[83 * mm, 83 * mm])
-    details.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#DBE5EE")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
-    story.extend([details, Spacer(1, 4 * mm), Paragraph("Descrição", styles["h2"]), Paragraph(safe(issue.get("description")), styles["body"]), Spacer(1, 4 * mm), Paragraph("Histórico de movimentações e modificações", styles["h2"])])
+    details.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#DBE5EE")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+    story.extend([details, Spacer(1, 2 * mm), Paragraph("Descrição", styles["h2"]), Paragraph(safe(issue.get("description")), styles["body"]), Spacer(1, 2 * mm), Paragraph("Histórico de movimentações e modificações", styles["h2"])])
     timeline = [["Data e hora", "Evento", "Transição", "Responsável", "Comentário / alterações"]]
     for item in history:
         transition = " -> ".join(filter(None, [text(item.get("from_status")), text(item.get("to_status"))]))
         timeline.append([Paragraph(safe(item.get("created_at")), styles["small"]), Paragraph(safe(item.get("event")), styles["small"]), Paragraph(safe(transition), styles["small"]), Paragraph(safe(item.get("actor")) or "Sistema", styles["small"]), Paragraph(history_comment(item.get("comment")), styles["small"])])
     timeline_table = LongTable(timeline, repeatRows=1, colWidths=[29 * mm, 32 * mm, 28 * mm, 33 * mm, 44 * mm])
-    timeline_table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#3578BC")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 7), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#DBE5EE")), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
-    story.extend([timeline_table, Spacer(1, 4 * mm), Paragraph("Evidências vinculadas", styles["h2"])])
+    timeline_table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#3578BC")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 7), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#DBE5EE")), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+    story.extend([timeline_table, Spacer(1, 2 * mm), Paragraph("Evidências vinculadas", styles["h2"])])
     evidence_data = [["Tipo", "Arquivo", "Captura", "Localização"]]
     for item in evidence:
         location = ", ".join(filter(None, [text(item.get("latitude")), text(item.get("longitude"))])) or "-"
         evidence_data.append([text(item.get("kind")), text(item.get("original_name")) or text(item.get("file_path")), text(item.get("captured_at")) or text(item.get("created_at")), location])
     evidence_table = Table(evidence_data, colWidths=[28 * mm, 70 * mm, 40 * mm, 28 * mm])
-    evidence_table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E9F2F9")), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 7), ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#DBE5EE")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
-    story.extend([evidence_table, Spacer(1, 6 * mm), Paragraph("Código de verificação do conteúdo", styles["h2"]), Paragraph(verification, ParagraphStyle("Hash", parent=styles["small"], fontName="Courier", wordWrap="CJK")), Spacer(1, 3 * mm), Paragraph("Este comprovante consolida os dados e a trilha de movimentações armazenados no ATLAS no momento da emissão. Alterações posteriores produzirão um código de verificação diferente.", styles["small"])])
+    evidence_table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E9F2F9")), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 7), ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#DBE5EE")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+    story.extend([evidence_table, Spacer(1, 3 * mm)])
+    if signature:
+        signed = Table([
+            ["ASSINATURA ELETRÔNICA DO ENCERRAMENTO", ""],
+            ["Fiscal responsável", text(signature.get("signer_name"))],
+            ["E-mail", text(signature.get("signer_email"))],
+            ["Data e hora", text(signature.get("signed_at"))],
+            ["Termo aceito", text(signature.get("acceptance_text"))],
+        ], colWidths=[46 * mm, 120 * mm])
+        signed.setStyle(TableStyle([("SPAN", (0, 0), (-1, 0)), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#18324D")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8), ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#DBE5EE")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+        story.extend([signed, Spacer(1, 2 * mm)])
+    verification_block = KeepTogether([Paragraph("Código de verificação do conteúdo", styles["h2"]), Paragraph(verification, ParagraphStyle("Hash", parent=styles["small"], fontName="Courier", wordWrap="CJK")), Spacer(1, 2 * mm), Paragraph("Este comprovante consolida os dados e a trilha de movimentações armazenados no ATLAS no momento da emissão. Alterações posteriores produzirão um código de verificação diferente.", styles["small"])])
+    story.append(verification_block)
     document.build(story, onFirstPage=pdf_footer, onLaterPages=pdf_footer)
     return stream.getvalue()

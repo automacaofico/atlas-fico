@@ -29,7 +29,7 @@ POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 24 * 7
 MAX_BODY = 12 * 1024 * 1024
 MIN_PASSWORD_LENGTH = 6
-ATLAS_VERSION = "0.11.1"
+ATLAS_VERSION = "0.12.0"
 INITIALIZATION = {"ready": False, "error": None}
 STORAGE_BUCKETS_READY = set()
 
@@ -265,7 +265,7 @@ def user_payload(connection, user_id):
     return payload
 
 
-def issue_payload(connection, row, histories=None, evidences=None):
+def issue_payload(connection, row, histories=None, evidences=None, comments=None, signatures=None):
     item = dict(row)
     if histories is None:
         item["history"] = [dict(x) for x in connection.execute(
@@ -279,6 +279,21 @@ def issue_payload(connection, row, histories=None, evidences=None):
         )]
     else:
         item["evidence"] = evidences.get(row["id"], [])
+    if comments is None:
+        item["comments"] = [dict(x) for x in connection.execute(
+            "SELECT c.id,c.body,c.attachment_path,c.original_name,c.mime_type,c.created_at,u.name author "
+            "FROM issue_comments c JOIN users u ON u.id=c.author_id WHERE c.issue_id=? ORDER BY c.id", (row["id"],)
+        )]
+    else:
+        item["comments"] = comments.get(row["id"], [])
+    if signatures is None:
+        signature = connection.execute(
+            "SELECT s.signer_name,s.acceptance_text,s.signed_at,u.email signer_email FROM closure_signatures s "
+            "JOIN users u ON u.id=s.signer_id WHERE s.issue_id=?", (row["id"],)
+        ).fetchone()
+        item["signature"] = dict(signature) if signature else None
+    else:
+        item["signature"] = signatures.get(row["id"])
     return item
 
 
@@ -293,6 +308,8 @@ PORTFOLIO_BACKUP_COLUMNS = {
     "issues": ("id", "source_id", "package", "segment", "asset", "side", "company_id", "protocol_code", "origin", "protocol", "protocol_type", "protocol_item", "element", "specialty", "description", "classification", "km_start", "km_end", "status", "contractor_owner", "fico_owner", "opened_at", "deadline_at", "expected_close_at", "closed_at", "notes", "created_by", "updated_at"),
     "evidence": ("id", "issue_id", "kind", "file_path", "original_name", "mime_type", "latitude", "longitude", "captured_at", "uploaded_by", "created_at"),
     "issue_history": ("id", "issue_id", "event", "from_status", "to_status", "comment", "actor_id", "created_at"),
+    "issue_comments": ("id", "issue_id", "body", "attachment_path", "original_name", "mime_type", "author_id", "created_at"),
+    "closure_signatures": ("id", "issue_id", "signer_id", "signer_name", "acceptance_text", "signed_at"),
 }
 
 
@@ -481,6 +498,8 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                     return self.json_response(200, [dict(row) for row in rows])
                 if parts == ["api", "dashboard"]:
                     return self.get_dashboard(connection, user)
+                if parts == ["api", "notifications"]:
+                    return self.get_notifications(connection, user)
                 if parts == ["api", "admin", "backups"]:
                     return self.list_backups(connection, user)
                 if len(parts) == 5 and parts[:3] == ["api", "admin", "backups"] and parts[4] == "download":
@@ -520,10 +539,14 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                     return self.change_password(connection, user, payload)
                 if parts == ["api", "issues"]:
                     return self.create_issue(connection, user, payload)
+                if parts == ["api", "issues", "bulk-update"]:
+                    return self.bulk_update_issues(connection, user, payload)
                 if len(parts) == 4 and parts[:2] == ["api", "issues"] and parts[3] == "correction":
                     return self.submit_correction(connection, user, int(parts[2]), payload)
                 if len(parts) == 4 and parts[:2] == ["api", "issues"] and parts[3] == "decision":
                     return self.decide_issue(connection, user, int(parts[2]), payload)
+                if len(parts) == 4 and parts[:2] == ["api", "issues"] and parts[3] == "comments":
+                    return self.add_issue_comment(connection, user, int(parts[2]), payload)
                 if len(parts) == 4 and parts[:2] == ["api", "issues"] and parts[3] == "evidence":
                     return self.add_historical_evidence(connection, user, int(parts[2]), payload)
                 if parts == ["api", "users"]:
@@ -532,6 +555,10 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                     return self.reset_user_password(connection, user, int(parts[2]), payload)
                 if parts == ["api", "admin", "backups"]:
                     return self.create_backup(connection, user, payload)
+                if parts == ["api", "notifications", "read-all"]:
+                    return self.read_all_notifications(connection, user)
+                if len(parts) == 4 and parts[:2] == ["api", "notifications"] and parts[3] == "read":
+                    return self.read_notification(connection, user, int(parts[2]))
                 if len(parts) == 5 and parts[:3] == ["api", "admin", "backups"] and parts[4] == "restore":
                     return self.restore_backup(connection, user, int(parts[3]), payload)
                 return self.json_response(404, {"error": "Rota não encontrada"})
@@ -599,7 +626,9 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         connection.execute("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)", (token_hash(token), row["id"], iso(expires)))
         connection.execute("UPDATE users SET last_login_at=? WHERE id=?", (iso(utcnow()), row["id"]))
         audit(connection, row["id"], "LOGIN", "SESSION", ip=self.client_address[0])
-        return self.json_response(200, {"token": token, "expires_at": iso(expires), "user": user_payload(connection, row["id"])})
+        logged_user = user_payload(connection, row["id"])
+        self.ensure_daily_backup(connection, logged_user)
+        return self.json_response(200, {"token": token, "expires_at": iso(expires), "user": logged_user})
 
     def request_password_reset(self, connection, payload):
         email = str(payload.get("email", "")).strip().lower()
@@ -690,7 +719,26 @@ class AtlasHandler(SimpleHTTPRequestHandler):
             item = dict(evidence)
             issue_id = item.pop("issue_id")
             evidences[issue_id].append(item)
-        return self.json_response(200, [issue_payload(connection, row, histories, evidences) for row in rows])
+        comments = {issue_id: [] for issue_id in issue_ids}
+        comment_rows = connection.execute(
+            "SELECT c.issue_id,c.id,c.body,c.attachment_path,c.original_name,c.mime_type,c.created_at,u.name author "
+            "FROM issue_comments c JOIN users u ON u.id=c.author_id "
+            f"WHERE c.issue_id IN ({placeholders}) ORDER BY c.id", issue_ids,
+        ).fetchall()
+        for comment in comment_rows:
+            item = dict(comment)
+            issue_id = item.pop("issue_id")
+            comments[issue_id].append(item)
+        signatures = {}
+        signature_rows = connection.execute(
+            "SELECT s.issue_id,s.signer_name,s.acceptance_text,s.signed_at,u.email signer_email "
+            "FROM closure_signatures s JOIN users u ON u.id=s.signer_id "
+            f"WHERE s.issue_id IN ({placeholders})", issue_ids,
+        ).fetchall()
+        for signature in signature_rows:
+            item = dict(signature)
+            signatures[item.pop("issue_id")] = item
+        return self.json_response(200, [issue_payload(connection, row, histories, evidences, comments, signatures) for row in rows])
 
     def get_issue(self, connection, user, issue_id):
         where, params = self.issue_scope(user)
@@ -718,6 +766,7 @@ class AtlasHandler(SimpleHTTPRequestHandler):
             connection.execute("INSERT INTO evidence(issue_id,kind,file_path,original_name,mime_type,latitude,longitude,captured_at,uploaded_by) VALUES(?,?,?,?,?,?,?,?,?)", (issue_id, "ABERTURA", file_path, original, mime, payload.get("latitude"), payload.get("longitude"), payload.get("captured_at"), user["id"]))
         connection.execute("INSERT INTO issue_history(issue_id,event,to_status,comment,actor_id) VALUES(?,?,?,?,?)", (issue_id, "PENDENCIA_CRIADA", "Aberta", payload.get("comment"), user["id"]))
         audit(connection, user["id"], "ISSUE_CREATED", "ISSUE", issue_id, ip=self.client_address[0])
+        self.notify_issue_users(connection, issue_id, "ATRIBUICAO", f"Nova pendência #{issue_id}", f"{payload['company']} · {payload['asset']} · {payload['specialty']}", "company", user["id"])
         return self.synced_response(connection, payload, 201, {"id": issue_id, "status": "Aberta"})
 
     def save_data_url(self, issue_id, data_url, original_name, actor_id, kind):
@@ -812,6 +861,7 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         event = "CORRECAO_ENVIADA" if contractor_authorized else "CORRECAO_REGISTRADA_PELO_FISCAL"
         connection.execute("INSERT INTO issue_history(issue_id,event,from_status,to_status,comment,actor_id) VALUES(?,?,?,?,?,?)", (issue_id, event, row["status"], "Aguardando validação", payload.get("comment"), user["id"]))
         audit(connection, user["id"], "CORRECTION_SUBMITTED", "ISSUE", issue_id, {"submitted_by": "contractor" if contractor_authorized else "fico"}, self.client_address[0])
+        self.notify_issue_users(connection, issue_id, "VALIDACAO", f"Correção pronta · #{issue_id}", "A correção foi enviada e aguarda validação FICO.", "fico", user["id"])
         return self.synced_response(connection, payload, 200, {"id": issue_id, "status": "Aguardando validação"})
 
     def decide_issue(self, connection, user, issue_id, payload):
@@ -830,12 +880,21 @@ class AtlasHandler(SimpleHTTPRequestHandler):
             return self.json_response(400, {"error": "Decisão inválida"})
         if decision == "approve" and payload.get("confirmed_review") is not True:
             return self.json_response(400, {"error": "Confirme a revisão completa dos dados e das evidências antes da baixa"})
+        if decision == "approve" and payload.get("acceptance_term") is not True:
+            return self.json_response(400, {"error": "Confirme o termo de responsabilidade para assinar o encerramento"})
         status = "Baixada" if decision == "approve" else "Rejeitada"
         if decision == "reject" and not str(payload.get("comment", "")).strip():
             return self.json_response(400, {"error": "Justificativa obrigatória para rejeição"})
         connection.execute("UPDATE issues SET status=?,closed_at=?,updated_at=? WHERE id=?", (status, iso(utcnow()) if status == "Baixada" else None, iso(utcnow()), issue_id))
         connection.execute("INSERT INTO issue_history(issue_id,event,from_status,to_status,comment,actor_id) VALUES(?,?,?,?,?,?)", (issue_id, "BAIXA_APROVADA" if decision == "approve" else "CORRECAO_REJEITADA", row["status"], status, payload.get("comment"), user["id"]))
+        if decision == "approve":
+            acceptance = "Declaro que revisei os dados e as evidências antes e depois e aprovo o encerramento desta pendência."
+            connection.execute(
+                "INSERT INTO closure_signatures(issue_id,signer_id,signer_name,acceptance_text) VALUES(?,?,?,?)",
+                (issue_id, user["id"], user["name"], acceptance),
+            )
         audit(connection, user["id"], "ISSUE_APPROVED" if decision == "approve" else "ISSUE_REJECTED", "ISSUE", issue_id, {"authorization": "global" if user["global_approval"] else "specialty"}, self.client_address[0])
+        self.notify_issue_users(connection, issue_id, "BAIXA" if decision == "approve" else "REJEICAO", f"Pendência #{issue_id} {'baixada' if decision == 'approve' else 'rejeitada'}", payload.get("comment") or ("Encerramento aprovado." if decision == "approve" else "Correção devolvida."), "company", user["id"])
         return self.synced_response(connection, payload, 200, {"id": issue_id, "status": status})
 
     def create_user(self, connection, user, payload):
@@ -910,6 +969,160 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         evidence_id = cursor.fetchone()["id"] if getattr(connection, "is_postgres", False) else cursor.lastrowid
         return self.json_response(201, {"id": evidence_id, "issue_id": issue_id, "kind": kind, "file_path": file_path})
 
+    def insert_notification(self, connection, user_id, issue_id, kind, title, message, dedupe_key):
+        if getattr(connection, "is_postgres", False):
+            connection.execute(
+                "INSERT INTO notifications(user_id,issue_id,kind,title,message,dedupe_key) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,dedupe_key) DO NOTHING",
+                (user_id, issue_id, kind, title, message, dedupe_key),
+            )
+        else:
+            connection.execute(
+                "INSERT OR IGNORE INTO notifications(user_id,issue_id,kind,title,message,dedupe_key) VALUES(?,?,?,?,?,?)",
+                (user_id, issue_id, kind, title, message, dedupe_key),
+            )
+
+    def notify_issue_users(self, connection, issue_id, kind, title, message, audience="all", exclude_user_id=None):
+        issue = connection.execute("SELECT company_id,specialty FROM issues WHERE id=?", (issue_id,)).fetchone()
+        if not issue:
+            return
+        users = connection.execute(
+            "SELECT u.id,u.role,u.company_id,u.global_approval,"
+            "MAX(CASE WHEN s.id IS NULL THEN 0 ELSE 1 END) specialty_match "
+            "FROM users u LEFT JOIN user_specialties us ON us.user_id=u.id "
+            "LEFT JOIN specialties s ON s.id=us.specialty_id AND s.name=? WHERE u.active=? "
+            "GROUP BY u.id,u.role,u.company_id,u.global_approval",
+            (issue["specialty"], True),
+        ).fetchall()
+        for target in users:
+            is_admin = target["role"] == "Administrador"
+            is_fico = target["role"] in ("Administrador", "Gestor FICO", "Fiscal FICO") and (target["global_approval"] or target["specialty_match"])
+            is_company = target["role"] == "Contratada" and target["company_id"] == issue["company_id"]
+            allowed = is_admin or (audience in ("all", "fico") and is_fico) or (audience in ("all", "company") and is_company)
+            if allowed and target["id"] != exclude_user_id:
+                self.insert_notification(connection, target["id"], issue_id, kind, title, message, f"event:{kind}:{issue_id}:{secrets.token_hex(8)}")
+
+    def generate_deadline_notifications(self, connection, user):
+        scope, params = self.issue_scope(user)
+        rows = connection.execute(
+            "SELECT i.id,i.deadline_at,i.asset,c.name company FROM issues i JOIN companies c ON c.id=i.company_id "
+            "WHERE i.status NOT IN ('Baixada','Cancelada') AND i.deadline_at IS NOT NULL" + scope,
+            params,
+        ).fetchall()
+        today = datetime.now().date()
+        overdue = []
+        upcoming = []
+        for row in rows:
+            try:
+                deadline = datetime.fromisoformat(str(row["deadline_at"])[:10]).date()
+            except ValueError:
+                continue
+            days = (deadline - today).days
+            if days < 0:
+                overdue.append(row)
+            elif days <= 3:
+                upcoming.append((row, days, deadline))
+        if overdue:
+            self.insert_notification(
+                connection, user["id"], None, "ATRASO", f"{len(overdue)} pendências em atraso",
+                "Acesse a carteira e filtre os prazos vencidos para priorizar a atuação.", f"overdue-summary:{today.isoformat()}",
+            )
+        for row, days, deadline in upcoming[:20]:
+            self.insert_notification(
+                connection, user["id"], row["id"], "PRAZO", f"Prazo próximo · #{row['id']}",
+                f"{row['company']} · {row['asset']} · vence em {days} dia(s)", f"deadline:{row['id']}:due:{deadline.isoformat()}",
+            )
+
+    def get_notifications(self, connection, user):
+        self.generate_deadline_notifications(connection, user)
+        rows = connection.execute(
+            "SELECT id,issue_id,kind,title,message,read_at,created_at FROM notifications WHERE user_id=? ORDER BY read_at IS NULL DESC,id DESC LIMIT 100",
+            (user["id"],),
+        ).fetchall()
+        unread = connection.execute("SELECT COUNT(*) total FROM notifications WHERE user_id=? AND read_at IS NULL", (user["id"],)).fetchone()["total"]
+        return self.json_response(200, {"unread": unread, "items": [dict(row) for row in rows]})
+
+    def read_notification(self, connection, user, notification_id):
+        connection.execute("UPDATE notifications SET read_at=? WHERE id=? AND user_id=?", (iso(utcnow()), notification_id, user["id"]))
+        return self.json_response(200, {"ok": True})
+
+    def read_all_notifications(self, connection, user):
+        connection.execute("UPDATE notifications SET read_at=? WHERE user_id=? AND read_at IS NULL", (iso(utcnow()), user["id"]))
+        return self.json_response(200, {"ok": True})
+
+    def add_issue_comment(self, connection, user, issue_id, payload):
+        scope, params = self.issue_scope(user)
+        issue = connection.execute("SELECT i.id,i.status FROM issues i WHERE i.id=?" + scope, [issue_id] + params).fetchone()
+        if not issue:
+            return self.json_response(404, {"error": "Pendência não encontrada"})
+        body = str(payload.get("body", "")).strip()
+        if not body:
+            return self.json_response(400, {"error": "Escreva um comentário"})
+        attachment_path = original = mime = None
+        if payload.get("photo_data_url"):
+            attachment_path, mime, original = self.save_data_url(issue_id, payload["photo_data_url"], payload.get("photo_name"), user["id"], "DOCUMENTO")
+            connection.execute(
+                "INSERT INTO evidence(issue_id,kind,file_path,original_name,mime_type,captured_at,uploaded_by) VALUES(?,?,?,?,?,?,?)",
+                (issue_id, "DOCUMENTO", attachment_path, original, mime, payload.get("captured_at"), user["id"]),
+            )
+        returning = " RETURNING id" if getattr(connection, "is_postgres", False) else ""
+        cursor = connection.execute(
+            "INSERT INTO issue_comments(issue_id,body,attachment_path,original_name,mime_type,author_id) VALUES(?,?,?,?,?,?)" + returning,
+            (issue_id, body, attachment_path, original, mime, user["id"]),
+        )
+        comment_id = cursor.fetchone()["id"] if getattr(connection, "is_postgres", False) else cursor.lastrowid
+        connection.execute(
+            "INSERT INTO issue_history(issue_id,event,from_status,to_status,comment,actor_id) VALUES(?,?,?,?,?,?)",
+            (issue_id, "COMENTARIO_ADICIONADO", issue["status"], issue["status"], body, user["id"]),
+        )
+        connection.execute("UPDATE issues SET updated_at=? WHERE id=?", (iso(utcnow()), issue_id))
+        audit(connection, user["id"], "ISSUE_COMMENTED", "ISSUE", issue_id, {"comment_id": comment_id, "attachment": bool(attachment_path)}, self.client_address[0])
+        self.notify_issue_users(connection, issue_id, "COMENTARIO", f"Novo comentário · #{issue_id}", body[:140], "all", user["id"])
+        return self.synced_response(connection, payload, 201, {"id": comment_id, "issue_id": issue_id})
+
+    def bulk_update_issues(self, connection, user, payload):
+        if user["role"] != "Administrador":
+            return self.json_response(403, {"error": "Apenas administradores podem alterar pendências em lote"})
+        issue_ids = sorted({int(value) for value in payload.get("issue_ids", []) if str(value).lstrip("-").isdigit() and int(value) > 0})
+        if not issue_ids or len(issue_ids) > 500:
+            return self.json_response(400, {"error": "Selecione entre 1 e 500 pendências"})
+        field = payload.get("field")
+        allowed = {"fico_owner", "contractor_owner", "deadline_at", "classification", "company"}
+        if field not in allowed:
+            return self.json_response(400, {"error": "Campo não permitido para alteração em lote"})
+        value = str(payload.get("value", "")).strip()
+        if not value:
+            return self.json_response(400, {"error": "Informe o novo valor"})
+        if field == "classification" and value not in ("Tipo A", "Tipo B", "Tipo C"):
+            return self.json_response(400, {"error": "Classificação inválida"})
+        if field == "deadline_at":
+            try:
+                datetime.fromisoformat(value)
+            except ValueError:
+                return self.json_response(400, {"error": "Prazo inválido"})
+        database_field, stored_value = field, value
+        if field == "company":
+            company = connection.execute("SELECT id FROM companies WHERE name=? AND active=?", (value, True)).fetchone()
+            if not company:
+                return self.json_response(400, {"error": "Empresa inválida"})
+            database_field, stored_value = "company_id", company["id"]
+        self.store_portfolio_backup(connection, user["id"], f"Automático antes da alteração em lote · {len(issue_ids)} pendências")
+        updated = 0
+        for issue_id in issue_ids:
+            row = connection.execute("SELECT * FROM issues WHERE id=?", (issue_id,)).fetchone()
+            if not row or str(row[database_field] or "") == str(stored_value):
+                continue
+            before = row[database_field]
+            connection.execute(f"UPDATE issues SET {database_field}=?,updated_at=? WHERE id=?", (stored_value, iso(utcnow()), issue_id))
+            changes = {field: {"from": before, "to": value}}
+            connection.execute(
+                "INSERT INTO issue_history(issue_id,event,from_status,to_status,comment,actor_id) VALUES(?,?,?,?,?,?)",
+                (issue_id, "ALTERACAO_EM_LOTE", row["status"], row["status"], json.dumps(changes, ensure_ascii=False), user["id"]),
+            )
+            self.notify_issue_users(connection, issue_id, "ATUALIZACAO", f"Pendência #{issue_id} atualizada", f"{field}: {value}", "all", user["id"])
+            updated += 1
+        audit(connection, user["id"], "ISSUES_BULK_UPDATED", "ISSUE", details={"ids": issue_ids, "field": field, "value": value, "updated": updated}, ip=self.client_address[0])
+        return self.json_response(200, {"ok": True, "updated": updated})
+
     def has_issue_conflict(self, row, payload):
         base = payload.get("base_updated_at")
         return bool(base and not payload.get("force_conflict") and timestamp_key(base) != timestamp_key(row["updated_at"]))
@@ -942,24 +1155,35 @@ class AtlasHandler(SimpleHTTPRequestHandler):
             return
         rows = connection.execute(
             "SELECT b.id,b.label,b.issue_count,b.created_at,u.name created_by_name "
-            "FROM portfolio_backups b JOIN users u ON u.id=b.created_by ORDER BY b.id DESC LIMIT 10"
+            "FROM portfolio_backups b JOIN users u ON u.id=b.created_by ORDER BY b.id DESC LIMIT 30"
         ).fetchall()
         return self.json_response(200, [dict(row) for row in rows])
 
-    def create_backup(self, connection, user, payload):
-        if not self.require_admin_backup(user):
-            return
+    def store_portfolio_backup(self, connection, user_id, label):
         snapshot = self.build_portfolio_snapshot(connection)
-        label = str(payload.get("label") or f"Ponto de recuperação {datetime.now().strftime('%d/%m/%Y %H:%M')}").strip()[:120]
         snapshot_json = json.dumps(snapshot, ensure_ascii=False, default=str)
         issue_count = len(snapshot["tables"]["issues"])
         returning = " RETURNING id" if getattr(connection, "is_postgres", False) else ""
         cursor = connection.execute(
             "INSERT INTO portfolio_backups(label,snapshot_json,issue_count,created_by) VALUES(?,?,?,?)" + returning,
-            (label, snapshot_json, issue_count, user["id"]),
+            (str(label).strip()[:120], snapshot_json, issue_count, user_id),
         )
         backup_id = cursor.fetchone()["id"] if getattr(connection, "is_postgres", False) else cursor.lastrowid
-        connection.execute("DELETE FROM portfolio_backups WHERE id NOT IN (SELECT id FROM portfolio_backups ORDER BY id DESC LIMIT 10)")
+        connection.execute("DELETE FROM portfolio_backups WHERE id NOT IN (SELECT id FROM portfolio_backups ORDER BY id DESC LIMIT 30)")
+        return backup_id, issue_count
+
+    def ensure_daily_backup(self, connection, user):
+        prefix = f"Automático diário · {datetime.now().date().isoformat()}"
+        if connection.execute("SELECT 1 FROM portfolio_backups WHERE label=?", (prefix,)).fetchone():
+            return
+        backup_id, issue_count = self.store_portfolio_backup(connection, user["id"], prefix)
+        audit(connection, user["id"], "PORTFOLIO_BACKUP_AUTOMATIC", "BACKUP", backup_id, {"issues": issue_count, "trigger": "daily"}, self.client_address[0])
+
+    def create_backup(self, connection, user, payload):
+        if not self.require_admin_backup(user):
+            return
+        label = str(payload.get("label") or f"Ponto de recuperação {datetime.now().strftime('%d/%m/%Y %H:%M')}").strip()[:120]
+        backup_id, issue_count = self.store_portfolio_backup(connection, user["id"], label)
         audit(connection, user["id"], "PORTFOLIO_BACKUP_CREATED", "BACKUP", backup_id, {"label": label, "issues": issue_count}, self.client_address[0])
         return self.json_response(201, {"id": backup_id, "label": label, "issue_count": issue_count})
 
@@ -989,17 +1213,23 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         for table in ("issues", "evidence", "issue_history"):
             if table not in tables:
                 return self.json_response(409, {"error": f"Backup incompleto: tabela {table} ausente"})
+        tables.setdefault("issue_comments", [])
+        tables.setdefault("closure_signatures", [])
+        safety_id, safety_count = self.store_portfolio_backup(connection, user["id"], f"Automático antes da restauração · ponto #{backup_id}")
+        audit(connection, user["id"], "PORTFOLIO_BACKUP_AUTOMATIC", "BACKUP", safety_id, {"issues": safety_count, "trigger": "pre_restore"}, self.client_address[0])
+        connection.execute("DELETE FROM closure_signatures")
+        connection.execute("DELETE FROM issue_comments")
         connection.execute("DELETE FROM issue_history")
         connection.execute("DELETE FROM evidence")
         connection.execute("DELETE FROM issues")
-        for table in ("issues", "evidence", "issue_history"):
+        for table in ("issues", "evidence", "issue_history", "issue_comments", "closure_signatures"):
             columns = PORTFOLIO_BACKUP_COLUMNS[table]
             placeholders = ",".join("?" for _ in columns)
             sql = f"INSERT INTO {table} ({','.join(columns)}) VALUES ({placeholders})"
             for item in tables[table]:
                 connection.execute(sql, tuple(item.get(column) for column in columns))
         if getattr(connection, "is_postgres", False):
-            for table in ("issues", "evidence", "issue_history"):
+            for table in ("issues", "evidence", "issue_history", "issue_comments", "closure_signatures"):
                 connection.execute(
                     "SELECT setval(pg_get_serial_sequence(?, 'id'), COALESCE((SELECT MAX(id) FROM " + table + "), 1), true)",
                     (table,),
@@ -1112,8 +1342,12 @@ class AtlasHandler(SimpleHTTPRequestHandler):
             "SELECT kind,file_path,original_name,latitude,longitude,captured_at,created_at FROM evidence WHERE issue_id=? ORDER BY id",
             (issue_id,),
         ).fetchall()
+        signature = connection.execute(
+            "SELECT s.signer_name,s.acceptance_text,s.signed_at,u.email signer_email FROM closure_signatures s "
+            "JOIN users u ON u.id=s.signer_id WHERE s.issue_id=?", (issue_id,),
+        ).fetchone()
         audit(connection, user["id"], "CLOSURE_CERTIFICATE_EXPORTED", "ISSUE", issue_id, ip=self.client_address[0])
-        content = closure_certificate(dict(issue), [dict(row) for row in history], [dict(row) for row in evidence])
+        content = closure_certificate(dict(issue), [dict(row) for row in history], [dict(row) for row in evidence], dict(signature) if signature else None)
         return self.binary_response(content, "application/pdf", f"atlas-comprovante-encerramento-{issue_id}.pdf")
 
 

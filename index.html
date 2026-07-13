@@ -42,7 +42,7 @@
         <button class="btn primary wide" type="submit">Entrar</button>
         <button id="forgotPasswordBtn" class="login-help-link" type="button">Esqueci minha senha</button>
       </form>
-      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.11.1</span></p>
+      <p class="app-credit login-credit">Desenvolvido por <strong>Thyago Viégas</strong> · <span data-app-version>v0.12.0</span></p>
     </main>
   </div>
 
@@ -56,6 +56,7 @@
         <button class="nav-item" data-view="map"><span>⌖</span>Mapa</button>
         <button class="nav-item" data-view="sync"><span>↻</span>Sincronização</button>
         <button class="nav-item admin-only" data-view="users"><span>◎</span>Usuários</button>
+        <button class="nav-item admin-only" data-view="quality"><span>◇</span>Qualidade</button>
         <button class="nav-item admin-only" data-view="backups"><span>▣</span>Backup</button>
       </nav>
       <button id="changePasswordBtn" class="sidebar-account" type="button"><span>⌁</span><span><strong>Alterar minha senha</strong><small>Segurança da conta</small></span></button>
@@ -65,14 +66,14 @@
         <div><strong id="sidebarName">Ana Souza</strong><small id="sidebarRole">Administrador</small></div>
         <button id="logoutBtn" title="Sair">↗</button>
       </div>
-      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.11.1</span></p>
+      <p class="app-credit sidebar-credit">Desenvolvido por <strong>Thyago Viégas</strong><br><span data-app-version>v0.12.0</span></p>
     </aside>
 
     <main class="content">
       <header class="topbar">
         <button id="menuBtn" class="icon-btn menu-btn">☰</button>
         <div><p class="eyebrow" id="pageEyebrow">Visão geral</p><h2 id="pageTitle">Painel operacional</h2></div>
-        <div class="top-actions"><div id="syncStatus" class="sync-status online"><span></span><strong>Sincronizado</strong></div><button id="installAppBtn" class="btn ghost install-app hidden">Instalar app</button><button id="prepareOfflineBtn" class="btn ghost offline-prep">Preparar offline</button><button class="icon-btn" title="Notificações">♢<span class="notification-dot"></span></button><button id="newIssueBtn" class="btn primary">+ Nova pendência</button></div>
+        <div class="top-actions"><div id="syncStatus" class="sync-status online"><span></span><strong>Sincronizado</strong></div><button id="installAppBtn" class="btn ghost install-app hidden">Instalar app</button><button id="prepareOfflineBtn" class="btn ghost offline-prep">Preparar offline</button><button id="notificationBtn" class="icon-btn" title="Notificações">♢<span id="notificationDot" class="notification-dot hidden"></span></button><button id="newIssueBtn" class="btn primary">+ Nova pendência</button></div>
       </header>
 
       <section id="dashboardView" class="view active-view">
@@ -87,6 +88,7 @@
             <section class="panel"><div class="panel-head"><div><h3>Pendências por especialidade</h3><p>Concentração do backlog</p></div></div><div id="typePerformance"></div></section>
             <section class="panel"><div class="panel-head"><div><h3>Gargalos do fluxo</h3><p>Pontos que exigem atuação</p></div></div><div id="bottleneckList" class="bottleneck-list"></div></section>
           </div>
+          <section class="panel contractor-performance-panel"><div class="panel-head"><div><h3>Desempenho das contratadas</h3><p>Baixas, atrasos, rejeições, reincidências e prazo médio</p></div></div><div id="contractorPerformanceTable" class="performance-table-wrap"></div></section>
         </section>
         <div class="summary-grid" id="summaryGrid"></div>
         <div class="dashboard-grid">
@@ -115,7 +117,8 @@
           <select id="assetFilter"><option value="">Todos os ativos</option></select>
         </div>
         <div class="advanced-filters"><select id="classificationFilter"><option value="">Todas as classificações</option></select><select id="ownerFilter"><option value="">Todos os responsáveis FICO</option></select><label>Abertura de<input id="openedFromFilter" type="date"></label><label>até<input id="openedToFilter" type="date"></label><button id="clearFiltersBtn" class="btn ghost" type="button">Limpar filtros</button></div>
-        <div class="table-wrap"><table><thead><tr><th>ID</th><th>Pendência</th><th>Local</th><th>Empresa</th><th>Prazo</th><th>Status</th><th></th></tr></thead><tbody id="issuesTable"></tbody></table></div>
+        <div id="bulkActions" class="bulk-actions admin-only hidden"><strong id="bulkSelectionCount">0 selecionadas</strong><span>Altere dados preservando histórico e backup anterior.</span><button id="openBulkUpdateBtn" class="btn primary" type="button">Alterar em lote</button><button id="clearBulkSelectionBtn" class="btn ghost" type="button">Limpar seleção</button></div>
+        <div class="table-wrap"><table><thead><tr><th class="admin-only"><input id="selectVisibleIssues" type="checkbox" aria-label="Selecionar pendências visíveis"></th><th>ID</th><th>Pendência</th><th>Local</th><th>Empresa</th><th>Prazo</th><th>Status</th><th></th></tr></thead><tbody id="issuesTable"></tbody></table></div>
       </section>
 
       <section id="approvalsView" class="view">
@@ -142,9 +145,15 @@
         <div class="table-wrap"><table><thead><tr><th>Usuário</th><th>Empresa</th><th>Perfil</th><th>Alçada de aprovação</th><th>Status</th><th></th></tr></thead><tbody id="usersTable"></tbody></table></div>
       </section>
 
+      <section id="qualityView" class="view">
+        <div class="section-actions"><div><h3>Qualidade dos dados</h3><p>Inconsistências que reduzem a confiabilidade dos relatórios e da operação de campo.</p></div><button id="refreshQualityBtn" class="btn ghost" type="button">Atualizar análise</button></div>
+        <div id="qualityMetrics" class="quality-metrics"></div>
+        <div class="panel"><div class="panel-head"><div><h3>Pendências para saneamento</h3><p>Clique em um registro para revisar ou editar.</p></div><strong id="qualityIssueCount"></strong></div><div id="qualityIssueList" class="quality-list"></div></div>
+      </section>
+
       <section id="backupsView" class="view">
         <div class="section-actions"><div><h3>Backup e recuperação</h3><p>Crie pontos de recuperação da carteira, fotos vinculadas e histórico operacional.</p></div><button id="createBackupBtn" class="btn primary" type="button">Criar ponto de recuperação</button></div>
-        <div class="backup-notice"><strong>Proteção operacional</strong><p>O backup preserva pendências, vínculos das evidências e histórico. Os arquivos das fotos permanecem no armazenamento privado do ATLAS.</p></div>
+        <div class="backup-notice"><strong>Proteção operacional automática</strong><p>O ATLAS cria um backup diário no primeiro acesso e outro antes de alterações em lote ou restaurações. Os 30 pontos mais recentes ficam disponíveis; as fotos permanecem no armazenamento privado.</p></div>
         <div id="backupList" class="backup-list"></div>
       </section>
     </main>
@@ -152,6 +161,7 @@
 
   <div id="drawerOverlay" class="overlay hidden"></div>
   <aside id="issueDrawer" class="drawer hidden"><div id="issueDrawerContent"></div></aside>
+  <aside id="notificationPanel" class="notification-panel hidden"><div class="notification-head"><div><p class="eyebrow">Central de avisos</p><h3>Notificações</h3></div><button id="closeNotifications" class="icon-btn" type="button">×</button></div><div class="notification-actions"><span id="notificationSummary"></span><button id="readAllNotifications" class="text-btn" type="button">Marcar todas como lidas</button></div><div id="notificationList" class="notification-list"></div></aside>
 
   <dialog id="issueDialog">
     <form id="issueForm" class="modal-form">
@@ -166,7 +176,7 @@
         <label class="full">Descrição<textarea name="description" rows="4" required placeholder="Descreva objetivamente a condição encontrada"></textarea></label>
         <label>Prazo<input name="deadline" type="date" required></label>
         <label>Responsável Vale<input name="ficoOwner" value="Ana Souza" required></label>
-        <label class="full photo-input"><span>Foto inicial obrigatória</span><input name="photo" type="file" accept="image/*" capture="environment" required><small>A câmera e a localização serão solicitadas no celular.</small></label>
+        <label class="full photo-input"><span>Foto inicial obrigatória</span><input name="photo" type="file" accept="image/*" capture="environment" required><small>A posição da pendência será definida pelos quilômetros inicial e final informados.</small></label>
       </div>
       <div class="modal-actions"><button type="button" class="btn ghost close-dialog">Cancelar</button><button class="btn primary" type="submit">Registrar pendência</button></div>
     </form>
@@ -216,9 +226,21 @@
       <div class="modal-head"><div><p class="eyebrow">Validação final FICO</p><h2>Confirmar baixa da pendência</h2></div><button type="button" class="icon-btn close-approval-dialog">×</button></div>
       <div class="approval-confirmation-summary" id="approvalConfirmationSummary"></div>
       <label class="checkbox approval-check"><input name="reviewed" type="checkbox" required><span><strong>Revisei a pendência completa e comparei as fotos</strong><small>Confirmo que a evidência “depois” atende ao serviço solicitado e permite o encerramento.</small></span></label>
+      <label class="checkbox approval-check signature-check"><input name="acceptanceTerm" type="checkbox" required><span><strong>Assino eletronicamente este encerramento</strong><small>Meu nome, e-mail, data, hora e termo de aceite serão incluídos no comprovante de baixa.</small></span></label>
       <label>Observação da aprovação<textarea name="comment" rows="3" placeholder="Opcional: registre uma observação para o histórico"></textarea></label>
       <div class="approval-warning">Esta ação encerra a pendência e gera o comprovante de baixa.</div>
       <div class="modal-actions"><button type="button" class="btn ghost close-approval-dialog">Voltar e revisar</button><button class="btn primary" type="submit">Confirmar baixa</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="bulkUpdateDialog">
+    <form id="bulkUpdateForm" class="modal-form">
+      <div class="modal-head"><div><p class="eyebrow">Administração em lote</p><h2>Alterar pendências selecionadas</h2></div><button type="button" class="icon-btn close-bulk-dialog">×</button></div>
+      <div id="bulkUpdateSummary" class="correction-summary"></div>
+      <label>Campo que será alterado<select name="field" required><option value="fico_owner">Responsável FICO</option><option value="contractor_owner">Responsável contratada</option><option value="deadline_at">Prazo</option><option value="classification">Classificação</option><option value="company">Empresa</option></select></label>
+      <label>Novo valor<input name="value" required autocomplete="off"><small id="bulkValueHelp">Informe o nome do responsável.</small></label>
+      <div class="approval-warning">Antes da alteração, o ATLAS criará automaticamente um ponto de recuperação.</div>
+      <div class="modal-actions"><button type="button" class="btn ghost close-bulk-dialog">Cancelar</button><button class="btn primary" type="submit">Aplicar alteração em lote</button></div>
     </form>
   </dialog>
 
