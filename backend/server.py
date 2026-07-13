@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 
 from reports import closure_certificate, dashboard_pdf, issues_pdf, issues_xlsx
 
@@ -28,8 +28,9 @@ SCHEMA = BACKEND / "schema.sql"
 POSTGRES_SCHEMA = BACKEND / "postgresql_schema.sql"
 SESSION_HOURS = 12
 MAX_BODY = 12 * 1024 * 1024
-ATLAS_VERSION = "0.7.1"
+ATLAS_VERSION = "0.7.2"
 INITIALIZATION = {"ready": False, "error": None}
+STORAGE_BUCKETS_READY = set()
 
 
 def utcnow():
@@ -450,6 +451,7 @@ class AtlasHandler(SimpleHTTPRequestHandler):
                     return self.get_dashboard(connection, user)
                 return self.json_response(404, {"error": "Rota não encontrada"})
         except Exception as exc:
+            print(f"ATLAS erro GET {self.path}: {exc}", flush=True)
             return self.json_response(500, {"error": "Falha interna", "detail": str(exc)})
 
     def do_POST(self):
@@ -494,6 +496,7 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         except sqlite3.IntegrityError as exc:
             return self.json_response(409, {"error": "Registro duplicado ou inválido", "detail": str(exc)})
         except Exception as exc:
+            print(f"ATLAS erro POST {self.path}: {exc}", flush=True)
             return self.json_response(500, {"error": "Falha interna", "detail": str(exc)})
 
     def do_PATCH(self):
@@ -651,6 +654,7 @@ class AtlasHandler(SimpleHTTPRequestHandler):
         object_path = f"{issue_id}/{filename}"
         supabase_url, secret, bucket = self.storage_config()
         if supabase_url and secret:
+            self.ensure_storage_bucket(supabase_url, secret, bucket)
             request = urllib.request.Request(
                 f"{supabase_url}/storage/v1/object/{bucket}/{object_path}",
                 data=content,
@@ -668,6 +672,40 @@ class AtlasHandler(SimpleHTTPRequestHandler):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(content)
         return "uploads/" + object_path, mime, original_name
+
+    def ensure_storage_bucket(self, supabase_url, secret, bucket):
+        cache_key = (supabase_url, bucket)
+        if cache_key in STORAGE_BUCKETS_READY:
+            return
+        headers = {"Authorization": f"Bearer {secret}", "apikey": secret}
+        bucket_url = f"{supabase_url}/storage/v1/bucket/{quote(bucket, safe='')}"
+        try:
+            with urllib.request.urlopen(urllib.request.Request(bucket_url, headers=headers), timeout=30):
+                STORAGE_BUCKETS_READY.add(cache_key)
+                return
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                detail = exc.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"Não foi possível verificar o armazenamento de evidências: {detail}") from exc
+        payload = json.dumps({
+            "id": bucket,
+            "name": bucket,
+            "public": False,
+            "file_size_limit": 10 * 1024 * 1024,
+            "allowed_mime_types": ["image/jpeg", "image/png", "image/webp"],
+        }).encode("utf-8")
+        create = urllib.request.Request(
+            f"{supabase_url}/storage/v1/bucket",
+            data=payload,
+            method="POST",
+            headers={**headers, "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(create, timeout=30):
+                STORAGE_BUCKETS_READY.add(cache_key)
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Não foi possível criar o armazenamento de evidências: {detail}") from exc
 
     def submit_correction(self, connection, user, issue_id, payload):
         row = connection.execute("SELECT * FROM issues WHERE id=?", (issue_id,)).fetchone()
